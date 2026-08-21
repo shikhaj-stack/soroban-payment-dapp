@@ -1,0 +1,519 @@
+"use client";
+
+import { useState, useEffect } from "react";
+import { useWalletStore } from "@/lib/store";
+import {
+  useMerchantEarnings,
+  useWithdrawMerchantEarnings,
+  useCreateTier,
+  useChargeBilling,
+  useBatchBilling,
+  useAllTiers,
+  type SubscriptionTier,
+} from "@/hooks/useContract";
+import Navbar from "@/components/Navbar";
+import ActivityFeed from "@/components/ActivityFeed";
+import TransactionTracker from "@/components/TransactionTracker";
+import {
+  Store,
+  DollarSign,
+  TrendingUp,
+  Users,
+  Layers,
+  PlusCircle,
+  Play,
+  CheckCircle2,
+  AlertCircle,
+  Loader2,
+  X,
+  ArrowUpRight,
+  Sparkles,
+  Zap,
+  Calendar,
+} from "lucide-react";
+
+function formatXLM(amount: bigint | number): string {
+  const num = typeof amount === "bigint" ? Number(amount) / 10_000_000 : amount / 10_000_000;
+  return num.toLocaleString("en-US", {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 2,
+  });
+}
+
+// Sample subscriber directory for merchant demo and monitoring
+interface MockSubscriberRecord {
+  address: string;
+  tierId: number;
+  tierName: string;
+  amount: number;
+  lastBilled: string;
+  status: "due" | "current" | "paused";
+}
+
+const INITIAL_SUBSCRIBERS: MockSubscriberRecord[] = [
+  {
+    address: "GBRPYHIL2CI3FNQ4BXLFMNDLFJUNPU2HY3ZMFXYORTMB35THQI2TTOHS",
+    tierId: 1,
+    tierName: "Starter",
+    amount: 10,
+    lastBilled: "31 days ago",
+    status: "due",
+  },
+  {
+    address: "GCZ7N22VRK5M4U6Y78P9OPQRST1234ABCDEF567890XYZWVUTSRQ",
+    tierId: 2,
+    tierName: "Pro Plan",
+    amount: 25,
+    lastBilled: "32 days ago",
+    status: "due",
+  },
+  {
+    address: "GAXODFXRJFZ7YBCPZP3UQ2K4LKJHG87654321QWERTYUIOPASDF",
+    tierId: 3,
+    tierName: "Enterprise VIP",
+    amount: 50,
+    lastBilled: "12 days ago",
+    status: "current",
+  },
+  {
+    address: "GDHJR34MNO8PQ9988AABBCCDDEEFF00112233445566778899",
+    tierId: 2,
+    tierName: "Pro Plan",
+    amount: 25,
+    lastBilled: "20 days ago",
+    status: "paused",
+  },
+];
+
+export default function MerchantPortal() {
+  const isConnected = useWalletStore((s) => s.isConnected);
+  const address = useWalletStore((s) => s.address);
+
+  const { earnings, refetch: refetchEarnings } = useMerchantEarnings();
+  const { tiers, refetch: refetchTiers } = useAllTiers();
+
+  const { mutate: withdrawEarnings, loading: withdrawing } = useWithdrawMerchantEarnings();
+  const { mutate: createTier, loading: creatingTier } = useCreateTier();
+  const { mutate: chargeBilling, loading: charging } = useChargeBilling();
+  const { mutate: batchBilling, loading: batchCharging } = useBatchBilling();
+
+  const [subscribers, setSubscribers] = useState<MockSubscriberRecord[]>(INITIAL_SUBSCRIBERS);
+  const [newTierName, setNewTierName] = useState("");
+  const [newTierPrice, setNewTierPrice] = useState("");
+  const [newTierDays, setNewTierDays] = useState("30");
+
+  const [toast, setToast] = useState<{
+    type: "success" | "error";
+    msg: string;
+  } | null>(null);
+
+  useEffect(() => {
+    if (isConnected) {
+      refetchEarnings();
+      refetchTiers();
+    }
+  }, [isConnected, refetchEarnings, refetchTiers]);
+
+  useEffect(() => {
+    if (toast) {
+      const t = setTimeout(() => setToast(null), 4500);
+      return () => clearTimeout(t);
+    }
+  }, [toast]);
+
+  const handleWithdrawAll = async () => {
+    if (earnings <= 0n) return;
+    try {
+      await withdrawEarnings(earnings);
+      setToast({
+        type: "success",
+        msg: `Claimed ${formatXLM(earnings)} XLM revenue directly into merchant wallet!`,
+      });
+      refetchEarnings();
+    } catch (err) {
+      setToast({
+        type: "error",
+        msg: err instanceof Error ? err.message : "Claim failed",
+      });
+    }
+  };
+
+  const handleCreateNewTier = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newTierPrice || parseFloat(newTierPrice) <= 0) return;
+    try {
+      const nextId = tiers.length + 1;
+      const priceStroops = BigInt(Math.floor(parseFloat(newTierPrice) * 10_000_000));
+      const intervalSec = BigInt(Math.floor(parseFloat(newTierDays) * 86400));
+      await createTier(nextId, priceStroops, intervalSec);
+      setToast({
+        type: "success",
+        msg: `Created Tier #${nextId} (${newTierName || `Tier ${nextId}`}) at ${newTierPrice} XLM!`,
+      });
+      setNewTierName("");
+      setNewTierPrice("");
+      refetchTiers();
+    } catch (err) {
+      setToast({
+        type: "error",
+        msg: err instanceof Error ? err.message : "Tier creation failed",
+      });
+    }
+  };
+
+  const handleChargeSingle = async (sub: MockSubscriberRecord) => {
+    try {
+      await chargeBilling(sub.address);
+      setToast({
+        type: "success",
+        msg: `Charged ${sub.amount} XLM billing to ${sub.address.slice(0, 6)}...`,
+      });
+      setSubscribers((prev) =>
+        prev.map((s) => (s.address === sub.address ? { ...s, status: "current", lastBilled: "Just now" } : s))
+      );
+      refetchEarnings();
+    } catch (err) {
+      setToast({
+        type: "error",
+        msg: err instanceof Error ? err.message : "Charge billing failed",
+      });
+    }
+  };
+
+  const handleBatchCharge = async () => {
+    const dueSubs = subscribers.filter((s) => s.status === "due");
+    if (dueSubs.length === 0) {
+      setToast({ type: "success", msg: "No subscribers are currently due for billing." });
+      return;
+    }
+    try {
+      await batchBilling(dueSubs.map((s) => s.address));
+      setToast({
+        type: "success",
+        msg: `Successfully processed batch billing for ${dueSubs.length} subscribers!`,
+      });
+      setSubscribers((prev) =>
+        prev.map((s) => (s.status === "due" ? { ...s, status: "current", lastBilled: "Just now" } : s))
+      );
+      refetchEarnings();
+    } catch (err) {
+      setToast({
+        type: "error",
+        msg: err instanceof Error ? err.message : "Batch billing failed",
+      });
+    }
+  };
+
+  const dueCount = subscribers.filter((s) => s.status === "due").length;
+
+  return (
+    <div className="flex flex-1 flex-col min-h-screen relative overflow-hidden bg-zinc-950">
+      {/* Background Ambience */}
+      <div className="orb orb-violet w-[500px] h-[500px] -top-32 -left-32 fixed animate-float opacity-30" />
+      <div className="orb orb-cyan w-[400px] h-[400px] top-1/2 -right-32 fixed animate-float-delayed opacity-20" />
+
+      <div className="relative z-10 flex flex-1 flex-col">
+        <Navbar />
+
+        <main className="flex-1 px-4 sm:px-6 py-8">
+          <div className="mx-auto max-w-7xl space-y-8">
+            {/* Header */}
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-zinc-800/80 pb-6">
+              <div>
+                <div className="flex items-center gap-2.5 mb-1">
+                  <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-violet-600/20 border border-violet-500/30 text-violet-300">
+                    <Store className="h-4 w-4" />
+                  </div>
+                  <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-zinc-100">
+                    Merchant Administration Portal
+                  </h1>
+                </div>
+                <p className="text-xs sm:text-sm text-zinc-400">
+                  Manage subscription tiers, track contract earnings, and execute automated billing cycles.
+                </p>
+              </div>
+
+              {isConnected && (
+                <div className="flex items-center gap-3">
+                  <span className="flex items-center gap-1.5 rounded-full bg-emerald-500/10 border border-emerald-500/20 px-3 py-1 text-xs font-semibold text-emerald-300">
+                    <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                    Admin Mode Active
+                  </span>
+                </div>
+              )}
+            </div>
+
+            {/* Toast */}
+            {toast && (
+              <div
+                className={`animate-slide-in-right flex items-start gap-3 rounded-2xl border px-4 py-3 glass backdrop-blur-md shadow-xl ${
+                  toast.type === "success"
+                    ? "border-emerald-500/30 bg-emerald-950/40 text-emerald-300"
+                    : "border-red-500/30 bg-red-950/40 text-red-300"
+                }`}
+              >
+                {toast.type === "success" ? (
+                  <CheckCircle2 className="h-5 w-5 text-emerald-400 shrink-0 mt-0.5" />
+                ) : (
+                  <AlertCircle className="h-5 w-5 text-red-400 shrink-0 mt-0.5" />
+                )}
+                <p className="text-sm font-medium flex-1">{toast.msg}</p>
+                <button
+                  onClick={() => setToast(null)}
+                  className="text-zinc-400 hover:text-zinc-200 transition-colors shrink-0"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+            )}
+
+            {/* Stats Overview */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+              <div className="rounded-2xl border border-zinc-800/80 bg-zinc-900/40 glass-subtle p-5">
+                <div className="flex items-center justify-between mb-3">
+                  <span className="text-xs font-bold uppercase tracking-wider text-zinc-500">
+                    Claimable Revenue
+                  </span>
+                  <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-violet-500/10 border border-violet-500/20 text-violet-400">
+                    <DollarSign className="h-4 w-4" />
+                  </div>
+                </div>
+                <div className="flex items-baseline gap-2">
+                  <span className="text-2xl font-extrabold text-zinc-100 font-mono">
+                    {formatXLM(earnings)}
+                  </span>
+                  <span className="text-xs font-bold text-violet-400">XLM</span>
+                </div>
+                <p className="text-[11px] text-zinc-500 mt-1">
+                  Accumulated in Soroban contract
+                </p>
+              </div>
+
+              <div className="rounded-2xl border border-zinc-800/80 bg-zinc-900/40 glass-subtle p-5">
+                <div className="flex items-center justify-between mb-3">
+                  <span className="text-xs font-bold uppercase tracking-wider text-zinc-500">
+                    Active Subscribers
+                  </span>
+                  <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-cyan-500/10 border border-cyan-500/20 text-cyan-400">
+                    <Users className="h-4 w-4" />
+                  </div>
+                </div>
+                <div className="flex items-baseline gap-2">
+                  <span className="text-2xl font-extrabold text-zinc-100">
+                    {subscribers.filter((s) => s.status !== "paused").length}
+                  </span>
+                  <span className="text-xs text-zinc-500">subscribers</span>
+                </div>
+                <p className="text-[11px] text-zinc-500 mt-1">
+                  {dueCount} billing renewal(s) due
+                </p>
+              </div>
+
+              <div className="rounded-2xl border border-zinc-800/80 bg-zinc-900/40 glass-subtle p-5">
+                <div className="flex items-center justify-between mb-3">
+                  <span className="text-xs font-bold uppercase tracking-wider text-zinc-500">
+                    Published Tiers
+                  </span>
+                  <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-400">
+                    <Layers className="h-4 w-4" />
+                  </div>
+                </div>
+                <div className="flex items-baseline gap-2">
+                  <span className="text-2xl font-extrabold text-zinc-100">
+                    {tiers.length}
+                  </span>
+                  <span className="text-xs text-zinc-500">plans live</span>
+                </div>
+                <p className="text-[11px] text-zinc-500 mt-1">
+                  On-chain Soroban storage
+                </p>
+              </div>
+
+              <div className="rounded-2xl border border-zinc-800/80 bg-zinc-900/40 glass-subtle p-5 flex flex-col justify-between">
+                <div>
+                  <span className="text-xs font-bold uppercase tracking-wider text-zinc-500">
+                    Quick Claim
+                  </span>
+                  <p className="text-xs text-zinc-400 mt-1">
+                    Withdraw all available revenue to your wallet
+                  </p>
+                </div>
+                <button
+                  onClick={handleWithdrawAll}
+                  disabled={withdrawing || earnings <= 0n || !isConnected}
+                  className="mt-3 w-full flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-violet-600 to-indigo-600 hover:from-violet-500 hover:to-indigo-500 disabled:bg-zinc-800 disabled:text-zinc-600 py-2.5 text-xs font-bold text-white shadow-lg shadow-violet-900/30 transition-all"
+                >
+                  {withdrawing ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  ) : (
+                    <DollarSign className="h-3.5 w-3.5" />
+                  )}
+                  {withdrawing ? "Claiming..." : "Claim All Earnings"}
+                </button>
+              </div>
+            </div>
+
+            {/* Main Layout Grid */}
+            <div className="grid gap-8 lg:grid-cols-5">
+              {/* Left Column: Subscriber Directory & Billing Engine */}
+              <div className="lg:col-span-3 space-y-6">
+                <div className="rounded-2xl border border-zinc-800/80 bg-zinc-900/40 glass-subtle p-6 space-y-5">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-zinc-800/80 pb-4">
+                    <div>
+                      <h3 className="text-sm font-bold text-zinc-100 flex items-center gap-2">
+                        <Users className="h-4 w-4 text-violet-400" />
+                        Subscriber Directory & Billing Engine
+                      </h3>
+                      <p className="text-xs text-zinc-400 mt-0.5">
+                        Trigger interval payments from user pre-funded deposits.
+                      </p>
+                    </div>
+
+                    <button
+                      onClick={handleBatchCharge}
+                      disabled={batchCharging || dueCount === 0 || !isConnected}
+                      className="flex items-center gap-2 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 disabled:bg-zinc-800 disabled:text-zinc-600 px-4 py-2 text-xs font-bold text-white shadow-lg shadow-emerald-900/30 transition-all"
+                    >
+                      {batchCharging ? (
+                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                      ) : (
+                        <Zap className="h-3.5 w-3.5" />
+                      )}
+                      Charge All Due ({dueCount})
+                    </button>
+                  </div>
+
+                  {/* Subscribers Table */}
+                  <div className="divide-y divide-zinc-800/60 overflow-hidden rounded-xl border border-zinc-800/60 bg-zinc-950/40">
+                    {subscribers.map((sub) => (
+                      <div
+                        key={sub.address}
+                        className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-4 hover:bg-zinc-900/40 transition-colors"
+                      >
+                        <div className="space-y-1">
+                          <div className="flex items-center gap-2">
+                            <span className="text-xs font-mono font-bold text-zinc-200">
+                              {sub.address.slice(0, 8)}...{sub.address.slice(-6)}
+                            </span>
+                            <span
+                              className={`rounded-full px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider border ${
+                                sub.status === "due"
+                                  ? "bg-amber-500/10 border-amber-500/30 text-amber-300 animate-pulse"
+                                  : sub.status === "paused"
+                                  ? "bg-zinc-800 border-zinc-700 text-zinc-400"
+                                  : "bg-emerald-500/10 border-emerald-500/30 text-emerald-300"
+                              }`}
+                            >
+                              {sub.status === "due" ? "Billing Due" : sub.status}
+                            </span>
+                          </div>
+                          <p className="text-[11px] text-zinc-500">
+                            Plan: <span className="text-zinc-300 font-semibold">{sub.tierName}</span> ({sub.amount} XLM) · Last billed: {sub.lastBilled}
+                          </p>
+                        </div>
+
+                        <div className="flex items-center gap-2">
+                          <button
+                            onClick={() => handleChargeSingle(sub)}
+                            disabled={charging || sub.status !== "due" || !isConnected}
+                            className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold transition-all ${
+                              sub.status === "due"
+                                ? "bg-violet-600 hover:bg-violet-500 text-white shadow-md"
+                                : "bg-zinc-800/60 text-zinc-600 cursor-not-allowed border border-zinc-800"
+                            }`}
+                          >
+                            <Play className="h-3 w-3" />
+                            Charge Billing
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Create New Tier Card */}
+                <div className="rounded-2xl border border-zinc-800/80 bg-zinc-900/40 glass-subtle p-6 space-y-4">
+                  <div className="border-b border-zinc-800/80 pb-3">
+                    <h3 className="text-sm font-bold text-zinc-100 flex items-center gap-2">
+                      <PlusCircle className="h-4 w-4 text-emerald-400" />
+                      Create New Subscription Tier
+                    </h3>
+                    <p className="text-xs text-zinc-400 mt-0.5">
+                      Publish a new recurring tier contract configuration onto Stellar.
+                    </p>
+                  </div>
+
+                  <form onSubmit={handleCreateNewTier} className="space-y-4">
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                      <div>
+                        <label className="text-[11px] font-bold text-zinc-400 uppercase tracking-wider block mb-1">
+                          Plan Name
+                        </label>
+                        <input
+                          type="text"
+                          value={newTierName}
+                          onChange={(e) => setNewTierName(e.target.value)}
+                          placeholder="e.g. VIP Business"
+                          className="w-full rounded-xl border border-zinc-700/60 bg-zinc-800/50 px-3.5 py-2.5 text-xs text-zinc-100 placeholder-zinc-500 focus:outline-none focus:border-violet-500"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-[11px] font-bold text-zinc-400 uppercase tracking-wider block mb-1">
+                          Price (XLM)
+                        </label>
+                        <input
+                          type="number"
+                          step="1"
+                          min="1"
+                          required
+                          value={newTierPrice}
+                          onChange={(e) => setNewTierPrice(e.target.value)}
+                          placeholder="e.g. 75"
+                          className="w-full rounded-xl border border-zinc-700/60 bg-zinc-800/50 px-3.5 py-2.5 text-xs text-zinc-100 placeholder-zinc-500 focus:outline-none focus:border-violet-500 font-mono"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-[11px] font-bold text-zinc-400 uppercase tracking-wider block mb-1">
+                          Interval (Days)
+                        </label>
+                        <input
+                          type="number"
+                          step="1"
+                          min="1"
+                          required
+                          value={newTierDays}
+                          onChange={(e) => setNewTierDays(e.target.value)}
+                          placeholder="e.g. 30"
+                          className="w-full rounded-xl border border-zinc-700/60 bg-zinc-800/50 px-3.5 py-2.5 text-xs text-zinc-100 placeholder-zinc-500 focus:outline-none focus:border-violet-500 font-mono"
+                        />
+                      </div>
+                    </div>
+
+                    <button
+                      type="submit"
+                      disabled={creatingTier || !newTierPrice || !isConnected}
+                      className="w-full flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 disabled:bg-zinc-800 disabled:text-zinc-600 py-2.5 text-xs font-bold text-white shadow-lg shadow-emerald-900/30 transition-all"
+                    >
+                      {creatingTier ? (
+                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                      ) : (
+                        <Sparkles className="h-3.5 w-3.5" />
+                      )}
+                      {creatingTier ? "Publishing Tier..." : "Publish New Tier to Smart Contract"}
+                    </button>
+                  </form>
+                </div>
+              </div>
+
+              {/* Right Column: Transaction tracker & Activity */}
+              <div className="lg:col-span-2 space-y-6">
+                <TransactionTracker />
+                <ActivityFeed />
+              </div>
+            </div>
+          </div>
+        </main>
+      </div>
+    </div>
+  );
+}
