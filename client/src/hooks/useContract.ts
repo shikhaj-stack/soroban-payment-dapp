@@ -2,6 +2,7 @@
 
 import { useCallback, useState, useEffect } from "react";
 import { useWalletStore, useTxStore } from "@/lib/store";
+import { signTransactionWithWallet } from "@/lib/wallets";
 import {
   buildAndSendTx,
   toScValAddress,
@@ -242,6 +243,7 @@ export function useMerchantEarnings() {
 
 function useExecuteMutation() {
   const address = useWalletStore((s) => s.address);
+  const walletType = useWalletStore((s) => s.walletType);
   const isDemoMode = useWalletStore((s) => s.isDemoMode);
   const demoSecret = useWalletStore((s) => s.demoSecret);
   const addTx = useTxStore((s) => s.addTransaction);
@@ -260,15 +262,14 @@ function useExecuteMutation() {
       });
 
       try {
-        let customSigner: ((txXdr: string) => Promise<string>) | undefined;
-        if (isDemoMode && demoSecret) {
-          customSigner = async (txXdr: string) => {
-            const kp = StellarSdk.Keypair.fromSecret(demoSecret);
-            const tx = StellarSdk.TransactionBuilder.fromXDR(txXdr, NETWORK_PASSPHRASE);
-            tx.sign(kp);
-            return tx.toXDR();
-          };
-        }
+        const activeWalletType = walletType || (isDemoMode ? "demo" : "freighter");
+        const customSigner = async (txXdr: string) => {
+          return await signTransactionWithWallet(activeWalletType, txXdr, {
+            secretKey: demoSecret,
+            publicKey: address,
+            networkPassphrase: NETWORK_PASSPHRASE,
+          });
+        };
 
         const tx = await buildAndSendTx(
           CONTRACT_ADDRESS,
@@ -288,7 +289,7 @@ function useExecuteMutation() {
         throw err;
       }
     },
-    [address, isDemoMode, demoSecret, addTx, updateTx]
+    [address, walletType, isDemoMode, demoSecret, addTx, updateTx]
   );
 
   return { execute };

@@ -33,6 +33,8 @@ export default function DashboardPage() {
   const isConnected = useWalletStore((s) => s.isConnected);
   const address = useWalletStore((s) => s.address);
   const isDemoMode = useWalletStore((s) => s.isDemoMode);
+  const walletName = useWalletStore((s) => s.walletName);
+  const setModalOpen = useWalletStore((s) => s.setModalOpen);
   const router = useRouter();
 
   const { balance, refetch: refetchBalance } = useBalance(address || null);
@@ -63,9 +65,9 @@ export default function DashboardPage() {
                   <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-zinc-100">
                     Subscriber Hub
                   </h1>
-                  {isDemoMode && (
-                    <span className="rounded-full bg-amber-500/10 border border-amber-500/30 px-2 py-0.5 text-[10px] font-mono text-amber-300 font-bold">
-                      DEMO MODE
+                  {walletName && (
+                    <span className="rounded-full bg-violet-500/10 border border-violet-500/30 px-2 py-0.5 text-[10px] font-mono text-violet-300 font-bold">
+                      {walletName}
                     </span>
                   )}
                 </div>
@@ -102,12 +104,23 @@ export default function DashboardPage() {
                 <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-gradient-to-br from-violet-600/20 to-cyan-600/20 border border-violet-500/20 mb-5">
                   <Layers className="h-8 w-8 text-violet-400" />
                 </div>
-                <h3 className="text-lg font-bold text-zinc-100 mb-2">
+                <h3 className="text-lg sm:text-xl font-bold text-zinc-100 mb-2">
                   Connect Your Stellar Wallet
                 </h3>
-                <p className="text-sm text-zinc-400 max-w-md leading-relaxed mb-6">
-                  Connect with Freighter browser wallet or activate instant Demo Mode to explore decentralized recurring payments on Stellar Soroban.
+                <p className="text-xs sm:text-sm text-zinc-400 max-w-md leading-relaxed mb-6">
+                  Connect with Freighter, Albedo, xBull, Rabet, Hana, or instant Demo Mode to manage non-custodial recurring payments on Stellar Soroban.
                 </p>
+
+                <div className="flex flex-wrap items-center justify-center gap-3 mb-10">
+                  <button
+                    onClick={() => setModalOpen(true)}
+                    className="flex items-center gap-2 rounded-xl bg-gradient-to-r from-violet-600 to-indigo-600 hover:from-violet-500 hover:to-indigo-500 px-6 py-3 text-xs sm:text-sm font-bold text-white shadow-xl shadow-violet-900/30 transition-all"
+                  >
+                    <Wallet className="h-4 w-4" />
+                    Select & Connect Wallet
+                  </button>
+                </div>
+
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 max-w-xl w-full">
                   {[
                     { icon: Shield, label: "Trustless Deposits", desc: "Non-custodial smart contract" },

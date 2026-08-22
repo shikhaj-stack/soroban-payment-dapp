@@ -57,8 +57,8 @@ const FEATURES = [
   },
   {
     icon: Globe,
-    title: "Freighter & Demo Mode",
-    desc: "Full support for Freighter browser extension plus instant Demo Mode for rapid testing without wallet installs.",
+    title: "Multi-Wallet Support",
+    desc: "Connect seamlessly with Freighter, Albedo (no-extension web bridge), xBull, Rabet, Hana, or instant Demo Mode.",
     gradient: "from-indigo-500 to-violet-600",
   },
 ];
@@ -67,7 +67,7 @@ const STEPS = [
   {
     num: "01",
     title: "Connect Wallet",
-    desc: "Connect your Freighter browser wallet or click Demo Mode to get an instant funded testnet account.",
+    desc: "Choose from Freighter, Albedo, xBull, Rabet, Hana, Secret Key, or instant Demo Mode.",
     icon: Wallet,
   },
   {
@@ -86,32 +86,29 @@ const STEPS = [
 
 export default function Home() {
   const router = useRouter();
-  const { setAddress, setDemoMode } = useWalletStore();
+  const { isConnected, setModalOpen, setWalletInfo } = useWalletStore();
   const [showHero, setShowHero] = useState(false);
 
   useEffect(() => {
     setShowHero(true);
   }, []);
 
-  const handleConnect = async () => {
-    try {
-      const addr = await connectFreighter();
-      setAddress(addr);
-      setDemoMode(false);
+  const handleLaunchSubscriber = () => {
+    if (isConnected) {
       router.push("/dashboard");
-    } catch {
-      // If Freighter fails, open demo mode smoothly
-      const demo = getOrCreateDemoAccount();
-      setAddress(demo.publicKey);
-      setDemoMode(true, demo.secretKey);
-      router.push("/dashboard");
+    } else {
+      setModalOpen(true);
     }
   };
 
   const handleLaunchDemo = () => {
     const demo = getOrCreateDemoAccount();
-    setAddress(demo.publicKey);
-    setDemoMode(true, demo.secretKey);
+    setWalletInfo({
+      address: demo.publicKey,
+      walletType: "demo",
+      walletName: "Demo Account",
+      secretKey: demo.secretKey,
+    });
     router.push("/dashboard");
   };
 
@@ -167,7 +164,7 @@ export default function Home() {
               }`}
             >
               <button
-                onClick={handleConnect}
+                onClick={handleLaunchSubscriber}
                 className="w-full sm:w-auto flex items-center justify-center gap-2.5 rounded-xl bg-gradient-to-r from-violet-600 via-indigo-600 to-violet-500 hover:from-violet-500 hover:to-indigo-500 px-7 py-3.5 text-xs sm:text-sm font-bold text-white shadow-xl shadow-violet-900/30 transition-all glow-violet"
               >
                 <Wallet className="h-4 w-4" />
@@ -299,7 +296,7 @@ export default function Home() {
               </p>
               <div className="flex flex-col sm:flex-row items-center justify-center gap-3">
                 <button
-                  onClick={handleConnect}
+                  onClick={handleLaunchSubscriber}
                   className="w-full sm:w-auto flex items-center justify-center gap-2 rounded-xl bg-violet-600 hover:bg-violet-500 px-6 py-3 text-xs font-bold text-white shadow-xl shadow-violet-900/30 transition-all"
                 >
                   <Wallet className="h-4 w-4" />

@@ -30,6 +30,7 @@ import {
   Sparkles,
   Zap,
   Calendar,
+  Wallet,
 } from "lucide-react";
 
 function formatXLM(amount: bigint | number): string {
@@ -88,6 +89,8 @@ const INITIAL_SUBSCRIBERS: MockSubscriberRecord[] = [
 export default function MerchantPortal() {
   const isConnected = useWalletStore((s) => s.isConnected);
   const address = useWalletStore((s) => s.address);
+  const walletName = useWalletStore((s) => s.walletName);
+  const setModalOpen = useWalletStore((s) => s.setModalOpen);
 
   const { earnings, refetch: refetchEarnings } = useMerchantEarnings();
   const { tiers, refetch: refetchTiers } = useAllTiers();
@@ -133,22 +136,23 @@ export default function MerchantPortal() {
     } catch (err) {
       setToast({
         type: "error",
-        msg: err instanceof Error ? err.message : "Claim failed",
+        msg: err instanceof Error ? err.message : "Withdrawal failed",
       });
     }
   };
 
   const handleCreateNewTier = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newTierPrice || parseFloat(newTierPrice) <= 0) return;
+    if (!newTierPrice) return;
+    const priceBigInt = BigInt(Math.floor(parseFloat(newTierPrice) * 10_000_000));
+    const intervalSec = BigInt(parseInt(newTierDays || "30") * 86400);
+    const nextTierId = (tiers?.length || 0) + 1;
+
     try {
-      const nextId = tiers.length + 1;
-      const priceStroops = BigInt(Math.floor(parseFloat(newTierPrice) * 10_000_000));
-      const intervalSec = BigInt(Math.floor(parseFloat(newTierDays) * 86400));
-      await createTier(nextId, priceStroops, intervalSec);
+      await createTier(nextTierId, priceBigInt, intervalSec);
       setToast({
         type: "success",
-        msg: `Created Tier #${nextId} (${newTierName || `Tier ${nextId}`}) at ${newTierPrice} XLM!`,
+        msg: `Tier #${nextTierId} created on Soroban smart contract!`,
       });
       setNewTierName("");
       setNewTierPrice("");
@@ -156,44 +160,53 @@ export default function MerchantPortal() {
     } catch (err) {
       setToast({
         type: "error",
-        msg: err instanceof Error ? err.message : "Tier creation failed",
+        msg: err instanceof Error ? err.message : "Failed to create tier",
       });
     }
   };
 
-  const handleChargeSingle = async (sub: MockSubscriberRecord) => {
+  const handleSingleCharge = async (userAddress: string) => {
     try {
-      await chargeBilling(sub.address);
+      await chargeBilling(userAddress);
       setToast({
         type: "success",
-        msg: `Charged ${sub.amount} XLM billing to ${sub.address.slice(0, 6)}...`,
+        msg: `Billed subscription for ${userAddress.slice(0, 4)}...${userAddress.slice(-4)}`,
       });
       setSubscribers((prev) =>
-        prev.map((s) => (s.address === sub.address ? { ...s, status: "current", lastBilled: "Just now" } : s))
+        prev.map((s) =>
+          s.address === userAddress
+            ? { ...s, status: "current", lastBilled: "Just now" }
+            : s
+        )
       );
       refetchEarnings();
     } catch (err) {
       setToast({
         type: "error",
-        msg: err instanceof Error ? err.message : "Charge billing failed",
+        msg: err instanceof Error ? err.message : "Billing failed",
       });
     }
   };
 
   const handleBatchCharge = async () => {
-    const dueSubs = subscribers.filter((s) => s.status === "due");
-    if (dueSubs.length === 0) {
-      setToast({ type: "success", msg: "No subscribers are currently due for billing." });
-      return;
-    }
+    const dueUsers = subscribers
+      .filter((s) => s.status === "due")
+      .map((s) => s.address);
+
+    if (dueUsers.length === 0) return;
+
     try {
-      await batchBilling(dueSubs.map((s) => s.address));
+      await batchBilling(dueUsers);
       setToast({
         type: "success",
-        msg: `Successfully processed batch billing for ${dueSubs.length} subscribers!`,
+        msg: `Atomic batch billing executed for ${dueUsers.length} subscribers!`,
       });
       setSubscribers((prev) =>
-        prev.map((s) => (s.status === "due" ? { ...s, status: "current", lastBilled: "Just now" } : s))
+        prev.map((s) =>
+          s.status === "due"
+            ? { ...s, status: "current", lastBilled: "Just now" }
+            : s
+        )
       );
       refetchEarnings();
     } catch (err) {
@@ -233,13 +246,21 @@ export default function MerchantPortal() {
                 </p>
               </div>
 
-              {isConnected && (
+              {isConnected ? (
                 <div className="flex items-center gap-3">
                   <span className="flex items-center gap-1.5 rounded-full bg-emerald-500/10 border border-emerald-500/20 px-3 py-1 text-xs font-semibold text-emerald-300">
                     <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                    Admin Mode Active
+                    Admin Mode Active ({walletName || "Connected"})
                   </span>
                 </div>
+              ) : (
+                <button
+                  onClick={() => setModalOpen(true)}
+                  className="flex items-center gap-2 rounded-xl bg-violet-600 hover:bg-violet-500 px-4 py-2 text-xs font-semibold text-white shadow-lg shadow-violet-900/30 transition-all"
+                >
+                  <Wallet className="h-3.5 w-3.5" />
+                  Connect Merchant Wallet
+                </button>
               )}
             </div>
 
@@ -414,7 +435,7 @@ export default function MerchantPortal() {
 
                         <div className="flex items-center gap-2">
                           <button
-                            onClick={() => handleChargeSingle(sub)}
+                            onClick={() => handleSingleCharge(sub.address)}
                             disabled={charging || sub.status !== "due" || !isConnected}
                             className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold transition-all ${
                               sub.status === "due"

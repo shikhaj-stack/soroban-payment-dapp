@@ -1,5 +1,6 @@
 import * as StellarSdk from "@stellar/stellar-sdk";
 import freighterApi from "@stellar/freighter-api";
+import { WalletType, signTransactionWithWallet } from "./wallets";
 
 const RPC_URL = process.env.NEXT_PUBLIC_RPC_URL ?? "https://soroban-testnet.stellar.org";
 const NETWORK_PASSPHRASE =
@@ -16,7 +17,7 @@ const DUMMY_PUBLIC_KEY = "GBRPYHIL2CI3FNQ4BXLFMNDLFJUNPU2HY3ZMFXYORTMB35THQI2TTO
 export async function isFreighterConnected(): Promise<boolean> {
   try {
     const { isConnected } = await freighterApi.isConnected();
-    return isConnected;
+    return !!isConnected;
   } catch {
     return false;
   }
@@ -39,7 +40,7 @@ export async function connectFreighter(): Promise<string> {
         throw new Error("User rejected the connection request");
       }
     }
-    throw new Error("Wallet not found. Please install Freighter or use Demo Mode.");
+    throw new Error("Wallet not found. Please install Freighter or try another wallet provider.");
   }
 }
 
@@ -141,7 +142,7 @@ export async function buildAndSendTx(
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     if (message.includes("insufficient")) {
-      throw new Error("Insufficient balance");
+      throw new Error("Insufficient balance in account");
     }
     throw err;
   }
