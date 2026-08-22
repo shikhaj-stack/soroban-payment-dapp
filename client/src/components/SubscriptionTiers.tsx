@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { useWalletStore } from "@/lib/store";
+import { useWalletStore, useToastStore } from "@/lib/store";
 import {
   useAllTiers,
   useSubscribe,
@@ -21,16 +21,15 @@ import {
   Crown,
   ArrowRight,
   Loader2,
-  AlertCircle,
   X,
   Coins,
-  Sparkles,
   ArrowDownToLine,
   ArrowUpFromLine,
   Pause,
   Play,
   Layers,
   ShieldCheck,
+  RefreshCw,
 } from "lucide-react";
 
 const TIER_ICONS = [Zap, Star, Crown];
@@ -58,7 +57,10 @@ function formatInterval(seconds: bigint): string {
 export default function SubscriptionTiers() {
   const address = useWalletStore((s) => s.address);
   const isConnected = useWalletStore((s) => s.isConnected);
-  const { tiers, loading: tiersLoading, refetch: refetchTiers } = useAllTiers();
+  const setModalOpen = useWalletStore((s) => s.setModalOpen);
+  const addToast = useToastStore((s) => s.addToast);
+
+  const { tiers, refetch: refetchTiers } = useAllTiers();
   const { balance, refetch: refetchBalance } = useBalance(address || null);
   const { subscriber, refetch: refetchSub } = useSubscriber(address || null);
 
@@ -72,10 +74,7 @@ export default function SubscriptionTiers() {
   const [activeTab, setActiveTab] = useState<"tiers" | "deposit" | "withdraw">("tiers");
   const [depositAmount, setDepositAmount] = useState("");
   const [withdrawAmount, setWithdrawAmount] = useState("");
-  const [toast, setToast] = useState<{
-    type: "success" | "error";
-    msg: string;
-  } | null>(null);
+  const [subscribingTierId, setSubscribingTierId] = useState<number | null>(null);
 
   useEffect(() => {
     if (isConnected && address) {
@@ -85,81 +84,82 @@ export default function SubscriptionTiers() {
     }
   }, [isConnected, address, refetchBalance, refetchSub, refetchTiers]);
 
-  useEffect(() => {
-    if (toast) {
-      const t = setTimeout(() => setToast(null), 4000);
-      return () => clearTimeout(t);
-    }
-  }, [toast]);
-
   const handleSubscribe = async (tier: SubscriptionTier) => {
+    if (!isConnected) {
+      setModalOpen(true);
+      return;
+    }
+
+    setSubscribingTierId(tier.id);
     try {
-      await subscribe(tier.id, tier.price);
-      setToast({
-        type: "success",
-        msg: `Successfully subscribed to ${TIER_NAMES[tier.id - 1] || `Tier ${tier.id}`}!`,
-      });
+      // If user has less balance than tier price, auto-deposit the difference
+      const depositRequired = balance >= tier.price ? 0n : tier.price - balance;
+      await subscribe(tier.id, depositRequired > 0n ? tier.price : 0n);
+      
+      const tierLabel = tier.name || TIER_NAMES[tier.id - 1] || `Tier ${tier.id}`;
+      addToast("success", `Subscribed to ${tierLabel} plan successfully!`, "Subscription Activated");
       refetchBalance();
       refetchSub();
     } catch (err) {
-      setToast({
-        type: "error",
-        msg: err instanceof Error ? err.message : "Subscription failed",
-      });
+      addToast("error", err instanceof Error ? err.message : "Subscription failed", "Transaction Error");
+    } finally {
+      setSubscribingTierId(null);
     }
   };
 
   const handleDeposit = async (customVal?: string) => {
+    if (!isConnected) {
+      setModalOpen(true);
+      return;
+    }
     const val = customVal || depositAmount;
     if (!val || parseFloat(val) <= 0) return;
     try {
       const stroops = BigInt(Math.floor(parseFloat(val) * 10_000_000));
       await deposit(stroops);
-      setToast({ type: "success", msg: `Deposited ${val} XLM into contract balance!` });
+      addToast("success", `Deposited ${val} XLM into Soroban contract balance!`, "Deposit Confirmed");
       refetchBalance();
       setDepositAmount("");
     } catch (err) {
-      setToast({
-        type: "error",
-        msg: err instanceof Error ? err.message : "Deposit failed",
-      });
+      addToast("error", err instanceof Error ? err.message : "Deposit failed", "Deposit Error");
     }
   };
 
   const handleWithdraw = async (customVal?: string) => {
+    if (!isConnected) {
+      setModalOpen(true);
+      return;
+    }
     const val = customVal || withdrawAmount;
     if (!val || parseFloat(val) <= 0) return;
     try {
       const stroops = BigInt(Math.floor(parseFloat(val) * 10_000_000));
       await withdraw(stroops);
-      setToast({ type: "success", msg: `Withdrew ${val} XLM back to your wallet!` });
+      addToast("success", `Withdrew ${val} XLM back to your wallet!`, "Withdrawal Confirmed");
       refetchBalance();
       setWithdrawAmount("");
     } catch (err) {
-      setToast({
-        type: "error",
-        msg: err instanceof Error ? err.message : "Withdrawal failed",
-      });
+      addToast("error", err instanceof Error ? err.message : "Withdrawal failed", "Withdrawal Error");
     }
   };
 
   const handlePause = async () => {
     try {
       await pauseSub();
-      setToast({ type: "success", msg: "Subscription paused. Auto-billing suspended." });
+      addToast("info", "Subscription paused. Automated billing cycles suspended.", "Plan Paused");
       refetchSub();
     } catch (err) {
-      setToast({ type: "error", msg: err instanceof Error ? err.message : "Failed to pause" });
+      addToast("error", err instanceof Error ? err.message : "Failed to pause plan", "Action Error");
     }
   };
 
   const handleResume = async () => {
     try {
       await resumeSub();
-      setToast({ type: "success", msg: "Subscription resumed and active." });
+      addToast("success", "Subscription resumed and active for renewal.", "Plan Resumed");
       refetchSub();
     } catch (err) {
-      setToast({ type: "error", msg: err instanceof Error ? err.message : "Failed to resume" });
+      addToast("error", err instanceof Error ? err.message : "Failed to resume plan", "Action Error");
     }
   };
 
@@ -167,13 +167,10 @@ export default function SubscriptionTiers() {
     if (!confirm("Are you sure you want to cancel your recurring subscription?")) return;
     try {
       await cancelSub();
-      setToast({ type: "success", msg: "Subscription cancelled successfully." });
+      addToast("info", "Subscription cancelled. Remaining deposit balance is available for withdrawal.", "Plan Cancelled");
       refetchSub();
     } catch (err) {
-      setToast({
-        type: "error",
-        msg: err instanceof Error ? err.message : "Cancel failed",
-      });
+      addToast("error", err instanceof Error ? err.message : "Cancellation failed", "Cancel Error");
     }
   };
 
@@ -182,41 +179,17 @@ export default function SubscriptionTiers() {
 
   return (
     <div className="space-y-5">
-      {/* Toast */}
-      {toast && (
-        <div
-          className={`animate-slide-in-right flex items-start gap-3 rounded-2xl border px-4 py-3 glass backdrop-blur-md shadow-xl ${
-            toast.type === "success"
-              ? "border-emerald-500/30 bg-emerald-950/40 text-emerald-300"
-              : "border-red-500/30 bg-red-950/40 text-red-300"
-          }`}
-        >
-          {toast.type === "success" ? (
-            <Check className="h-5 w-5 text-emerald-400 shrink-0 mt-0.5" />
-          ) : (
-            <AlertCircle className="h-5 w-5 text-red-400 shrink-0 mt-0.5" />
-          )}
-          <p className="text-sm font-medium flex-1">{toast.msg}</p>
-          <button
-            onClick={() => setToast(null)}
-            className="text-zinc-400 hover:text-zinc-200 transition-colors shrink-0"
-          >
-            <X className="h-4 w-4" />
-          </button>
-        </div>
-      )}
-
-      {/* Subscription Status Card */}
+      {/* Subscription Status Banner */}
       {isConnected && address && (
         <div className="rounded-2xl border border-zinc-800/80 bg-zinc-900/40 glass-subtle p-5">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-3.5">
               <div
-                className={`flex h-11 w-11 items-center justify-center rounded-xl border ${
+                className={`flex h-12 w-12 items-center justify-center rounded-2xl border transition-all ${
                   isSubActive
                     ? isSubPaused
                       ? "bg-amber-500/10 border-amber-500/30 text-amber-400"
-                      : "bg-emerald-500/10 border-emerald-500/30 text-emerald-400"
+                      : "bg-emerald-500/10 border-emerald-500/30 text-emerald-400 shadow-lg shadow-emerald-950/40"
                     : "bg-zinc-800/50 border-zinc-700/50 text-zinc-500"
                 }`}
               >
@@ -224,29 +197,41 @@ export default function SubscriptionTiers() {
               </div>
               <div>
                 <div className="flex items-center gap-2">
-                  <h3 className="text-sm font-bold text-zinc-100">
+                  <h3 className="text-sm sm:text-base font-bold text-zinc-100">
                     {isSubActive
                       ? `${TIER_NAMES[subscriber.tier_id - 1] || `Tier ${subscriber.tier_id}`}`
                       : "No Active Subscription"}
                   </h3>
                   {isSubActive && (
                     <span
-                      className={`rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider border ${
+                      className={`rounded-full px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider border ${
                         isSubPaused
                           ? "bg-amber-500/10 border-amber-500/30 text-amber-300"
                           : "bg-emerald-500/10 border-emerald-500/30 text-emerald-300"
                       }`}
                     >
-                      {isSubPaused ? "Paused" : "Active"}
+                      {isSubPaused ? "Paused" : "Active & Renewing"}
                     </span>
                   )}
                 </div>
-                <p className="text-xs text-zinc-400 mt-0.5">
-                  Deposited Balance:{" "}
-                  <span className="font-bold text-zinc-200">
-                    {formatPrice(balance)} XLM
+                <div className="flex items-center gap-3 text-xs text-zinc-400 mt-1">
+                  <span>
+                    Contract Escrow Balance:{" "}
+                    <strong className="text-zinc-200 font-mono">
+                      {formatPrice(balance)} XLM
+                    </strong>
                   </span>
-                </p>
+                  <button
+                    onClick={() => {
+                      refetchBalance();
+                      refetchSub();
+                    }}
+                    className="text-zinc-500 hover:text-violet-400 transition-colors"
+                    title="Refresh Balance"
+                  >
+                    <RefreshCw className="h-3 w-3" />
+                  </button>
+                </div>
               </div>
             </div>
 
@@ -257,7 +242,7 @@ export default function SubscriptionTiers() {
                   <button
                     onClick={handleResume}
                     disabled={resuming}
-                    className="flex items-center gap-1.5 rounded-xl border border-emerald-500/30 bg-emerald-500/10 hover:bg-emerald-500/20 px-3 py-1.5 text-xs font-semibold text-emerald-300 transition-all disabled:opacity-50"
+                    className="flex items-center gap-1.5 rounded-xl border border-emerald-500/30 bg-emerald-500/10 hover:bg-emerald-500/20 px-3.5 py-2 text-xs font-semibold text-emerald-300 transition-all disabled:opacity-50"
                   >
                     {resuming ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Play className="h-3.5 w-3.5" />}
                     Resume Plan
@@ -266,7 +251,7 @@ export default function SubscriptionTiers() {
                   <button
                     onClick={handlePause}
                     disabled={pausing}
-                    className="flex items-center gap-1.5 rounded-xl border border-amber-500/30 bg-amber-500/10 hover:bg-amber-500/20 px-3 py-1.5 text-xs font-semibold text-amber-300 transition-all disabled:opacity-50"
+                    className="flex items-center gap-1.5 rounded-xl border border-amber-500/30 bg-amber-500/10 hover:bg-amber-500/20 px-3.5 py-2 text-xs font-semibold text-amber-300 transition-all disabled:opacity-50"
                   >
                     {pausing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Pause className="h-3.5 w-3.5" />}
                     Pause Plan
@@ -275,7 +260,7 @@ export default function SubscriptionTiers() {
                 <button
                   onClick={handleCancel}
                   disabled={cancelling}
-                  className="flex items-center gap-1.5 rounded-xl border border-red-500/30 bg-red-500/10 hover:bg-red-500/20 px-3 py-1.5 text-xs font-semibold text-red-300 transition-all disabled:opacity-50"
+                  className="flex items-center gap-1.5 rounded-xl border border-red-500/30 bg-red-500/10 hover:bg-red-500/20 px-3.5 py-2 text-xs font-semibold text-red-300 transition-all disabled:opacity-50"
                 >
                   {cancelling ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <X className="h-3.5 w-3.5" />}
                   Cancel Plan
@@ -292,18 +277,18 @@ export default function SubscriptionTiers() {
           onClick={() => setActiveTab("tiers")}
           className={`flex items-center gap-2 rounded-xl px-4 py-2 text-xs font-bold transition-all ${
             activeTab === "tiers"
-              ? "bg-violet-600/20 text-violet-300 border border-violet-500/30"
+              ? "bg-violet-600/20 text-violet-300 border border-violet-500/30 shadow-sm"
               : "text-zinc-400 hover:text-zinc-200 hover:bg-zinc-900/60"
           }`}
         >
           <Layers className="h-3.5 w-3.5" />
-          Subscription Plans
+          Subscription Plans ({tiers.length})
         </button>
         <button
           onClick={() => setActiveTab("deposit")}
           className={`flex items-center gap-2 rounded-xl px-4 py-2 text-xs font-bold transition-all ${
             activeTab === "deposit"
-              ? "bg-emerald-600/20 text-emerald-300 border border-emerald-500/30"
+              ? "bg-emerald-600/20 text-emerald-300 border border-emerald-500/30 shadow-sm"
               : "text-zinc-400 hover:text-zinc-200 hover:bg-zinc-900/60"
           }`}
         >
@@ -314,7 +299,7 @@ export default function SubscriptionTiers() {
           onClick={() => setActiveTab("withdraw")}
           className={`flex items-center gap-2 rounded-xl px-4 py-2 text-xs font-bold transition-all ${
             activeTab === "withdraw"
-              ? "bg-cyan-600/20 text-cyan-300 border border-cyan-500/30"
+              ? "bg-cyan-600/20 text-cyan-300 border border-cyan-500/30 shadow-sm"
               : "text-zinc-400 hover:text-zinc-200 hover:bg-zinc-900/60"
           }`}
         >
@@ -329,16 +314,17 @@ export default function SubscriptionTiers() {
           {tiers.map((tier, i) => {
             const Icon = TIER_ICONS[i % TIER_ICONS.length];
             const gradient = TIER_GRADIENTS[i % TIER_GRADIENTS.length];
-            const name = TIER_NAMES[i] || `Tier ${tier.id}`;
+            const name = tier.name || TIER_NAMES[i] || `Tier ${tier.id}`;
             const isActive = subscriber?.active && subscriber.tier_id === tier.id;
             const hasFunds = balance >= tier.price;
+            const isProcessingThis = subscribing && subscribingTierId === tier.id;
 
             return (
               <div
                 key={tier.id}
                 className={`group relative rounded-2xl border bg-zinc-900/40 glass-subtle p-6 transition-all duration-300 hover:border-zinc-700/80 hover:bg-zinc-900/60 flex flex-col justify-between ${
                   isActive
-                    ? "border-violet-500/40 ring-1 ring-violet-500/30 glow-violet"
+                    ? "border-violet-500/50 ring-1 ring-violet-500/30 glow-violet"
                     : "border-zinc-800/80"
                 }`}
               >
@@ -365,7 +351,7 @@ export default function SubscriptionTiers() {
                   <h3 className="text-lg font-bold text-zinc-100 mb-1">{name}</h3>
 
                   <div className="flex items-baseline gap-1.5 mb-5">
-                    <span className="text-3xl font-extrabold text-zinc-100">
+                    <span className="text-3xl font-extrabold text-zinc-100 font-mono">
                       {formatPrice(tier.price)}
                     </span>
                     <span className="text-sm font-semibold text-violet-400">XLM</span>
@@ -392,30 +378,28 @@ export default function SubscriptionTiers() {
 
                 <button
                   onClick={() => handleSubscribe(tier)}
-                  disabled={!isConnected || subscribing || isActive}
+                  disabled={isProcessingThis || isActive}
                   className={`w-full flex items-center justify-center gap-2 rounded-xl py-3 text-xs font-bold transition-all ${
                     isActive
                       ? "bg-zinc-800/60 text-zinc-400 cursor-default border border-zinc-700/40"
                       : isConnected
-                      ? hasFunds
-                        ? "bg-gradient-to-r from-violet-600 to-indigo-600 hover:from-violet-500 hover:to-indigo-500 text-white shadow-lg shadow-violet-900/30"
-                        : "bg-zinc-800/80 hover:bg-zinc-800 text-zinc-300 border border-zinc-700/50"
-                      : "bg-zinc-800/40 text-zinc-500 cursor-not-allowed border border-zinc-800"
+                      ? "bg-gradient-to-r from-violet-600 to-indigo-600 hover:from-violet-500 hover:to-indigo-500 text-white shadow-lg shadow-violet-900/30"
+                      : "bg-zinc-800/80 hover:bg-zinc-800 text-zinc-200 border border-zinc-700/60"
                   }`}
                 >
-                  {subscribing ? (
+                  {isProcessingThis ? (
                     <Loader2 className="h-4 w-4 animate-spin" />
                   ) : isActive ? (
-                    <Check className="h-4 w-4" />
+                    <Check className="h-4 w-4 text-violet-400" />
                   ) : (
                     <ArrowRight className="h-4 w-4" />
                   )}
                   {!isConnected
                     ? "Connect Wallet to Subscribe"
                     : isActive
-                    ? "Active Subscription"
-                    : subscribing
-                    ? "Confirming..."
+                    ? "Current Active Plan"
+                    : isProcessingThis
+                    ? "Confirming on Ledger..."
                     : hasFunds
                     ? "Subscribe Now"
                     : "Deposit & Subscribe"}
@@ -428,13 +412,13 @@ export default function SubscriptionTiers() {
 
       {/* TAB: DEPOSIT */}
       {activeTab === "deposit" && (
-        <div className="rounded-2xl border border-zinc-800/80 bg-zinc-900/40 glass-subtle p-6 max-w-xl space-y-4">
+        <div className="rounded-2xl border border-zinc-800/80 bg-zinc-900/40 glass-subtle p-6 max-w-xl space-y-5">
           <div>
             <h3 className="text-sm font-bold text-zinc-100 mb-1">
-              Top Up Your Contract Balance
+              Top Up Your Contract Escrow Balance
             </h3>
-            <p className="text-xs text-zinc-400">
-              Deposited funds are securely held in the Soroban smart contract to cover upcoming billing intervals. You can withdraw unused funds anytime.
+            <p className="text-xs text-zinc-400 leading-relaxed">
+              Deposited funds are securely held in the Soroban smart contract to cover upcoming recurring billing intervals. You can withdraw unused balance anytime.
             </p>
           </div>
 
@@ -443,7 +427,7 @@ export default function SubscriptionTiers() {
               <button
                 key={amt}
                 onClick={() => setDepositAmount(amt.toString())}
-                className="flex-1 rounded-xl border border-zinc-800 bg-zinc-900/60 py-2 text-xs font-semibold text-zinc-300 hover:border-emerald-500/40 hover:bg-emerald-500/10 transition-all"
+                className="flex-1 rounded-xl border border-zinc-800 bg-zinc-900/80 py-2.5 text-xs font-semibold text-zinc-300 hover:border-emerald-500/40 hover:bg-emerald-500/10 hover:text-emerald-300 transition-all font-mono"
               >
                 +{amt} XLM
               </button>
@@ -467,7 +451,7 @@ export default function SubscriptionTiers() {
             </div>
             <button
               onClick={() => handleDeposit()}
-              disabled={depositing || !depositAmount || !isConnected}
+              disabled={depositing || !depositAmount}
               className="flex items-center gap-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 disabled:bg-zinc-800 disabled:text-zinc-600 px-6 py-3 text-xs font-bold text-white shadow-lg shadow-emerald-900/30 transition-all"
             >
               {depositing ? (
@@ -475,7 +459,7 @@ export default function SubscriptionTiers() {
               ) : (
                 <Coins className="h-4 w-4" />
               )}
-              {depositing ? "Depositing..." : "Deposit"}
+              {depositing ? "Depositing..." : "Deposit XLM"}
             </button>
           </div>
         </div>
@@ -483,19 +467,19 @@ export default function SubscriptionTiers() {
 
       {/* TAB: WITHDRAW */}
       {activeTab === "withdraw" && (
-        <div className="rounded-2xl border border-zinc-800/80 bg-zinc-900/40 glass-subtle p-6 max-w-xl space-y-4">
+        <div className="rounded-2xl border border-zinc-800/80 bg-zinc-900/40 glass-subtle p-6 max-w-xl space-y-5">
           <div>
             <h3 className="text-sm font-bold text-zinc-100 mb-1">
-              Withdraw Available Deposit
+              Withdraw Available Escrow Balance
             </h3>
-            <p className="text-xs text-zinc-400">
-              Claim back any unspent tokens stored in the contract directly into your connected wallet.
+            <p className="text-xs text-zinc-400 leading-relaxed">
+              Claim back any unspent tokens stored in the contract directly into your connected Stellar wallet.
             </p>
           </div>
 
-          <div className="flex items-center justify-between rounded-xl bg-zinc-800/40 border border-zinc-700/40 px-4 py-2.5 text-xs">
+          <div className="flex items-center justify-between rounded-xl bg-zinc-800/40 border border-zinc-700/40 px-4 py-3 text-xs">
             <span className="text-zinc-400">Available to Withdraw:</span>
-            <span className="font-bold text-cyan-300 font-mono">
+            <span className="font-bold text-cyan-300 font-mono text-sm">
               {formatPrice(balance)} XLM
             </span>
           </div>
@@ -520,7 +504,7 @@ export default function SubscriptionTiers() {
             </div>
             <button
               onClick={() => handleWithdraw()}
-              disabled={withdrawing || !withdrawAmount || balance <= 0n || !isConnected}
+              disabled={withdrawing || !withdrawAmount || balance <= 0n}
               className="flex items-center gap-2 rounded-xl bg-cyan-600 hover:bg-cyan-500 disabled:bg-zinc-800 disabled:text-zinc-600 px-6 py-3 text-xs font-bold text-white shadow-lg shadow-cyan-900/30 transition-all"
             >
               {withdrawing ? (
@@ -528,7 +512,7 @@ export default function SubscriptionTiers() {
               ) : (
                 <ArrowUpFromLine className="h-4 w-4" />
               )}
-              {withdrawing ? "Withdrawing..." : "Withdraw"}
+              {withdrawing ? "Withdrawing..." : "Withdraw XLM"}
             </button>
           </div>
         </div>

@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useRouter, usePathname } from "next/navigation";
-import { useWalletStore } from "@/lib/store";
+import { useWalletStore, useToastStore } from "@/lib/store";
 import { fundTestnetAccount } from "@/lib/stellar";
 import { shortenAddress } from "@/hooks/useEvents";
 import WalletModal from "./WalletModal";
@@ -21,8 +21,10 @@ import {
   Loader2,
   ChevronDown,
   RefreshCw,
-  Sparkles,
   ExternalLink,
+  CheckCircle2,
+  AlertCircle,
+  Info,
 } from "lucide-react";
 
 export default function Navbar() {
@@ -38,6 +40,8 @@ export default function Navbar() {
     disconnect,
   } = useWalletStore();
 
+  const { toasts, removeToast, addToast } = useToastStore();
+
   const [copied, setCopied] = useState(false);
   const [funding, setFunding] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -46,15 +50,17 @@ export default function Navbar() {
   const handleFaucet = async () => {
     if (!address) return;
     setFunding(true);
+    addToast("info", "Requesting 10,000 Testnet XLM from Stellar Friendbot faucet...", "Friendbot Request");
     try {
       const ok = await fundTestnetAccount(address);
       if (ok) {
-        alert("Account funded with 10,000 Testnet XLM via Friendbot!");
+        addToast("success", "Account successfully funded with 10,000 Testnet XLM!", "Faucet Success");
       } else {
-        alert("Friendbot request submitted.");
+        addToast("info", "Friendbot request submitted. Funds will reflect in ledger shortly.", "Faucet Queued");
       }
     } catch (err) {
       console.error(err);
+      addToast("error", "Friendbot request timed out. You can retry in a few seconds.", "Faucet Error");
     } finally {
       setFunding(false);
     }
@@ -64,6 +70,7 @@ export default function Navbar() {
     if (address) {
       await navigator.clipboard.writeText(address);
       setCopied(true);
+      addToast("success", "Stellar address copied to clipboard!");
       setTimeout(() => setCopied(false), 2000);
     }
   };
@@ -256,6 +263,7 @@ export default function Navbar() {
                           onClick={() => {
                             setAccountMenuOpen(false);
                             disconnect();
+                            addToast("info", "Wallet disconnected.");
                           }}
                           className="flex items-center justify-between w-full rounded-xl px-2.5 py-2 text-xs text-red-400 hover:bg-red-500/10 transition-colors"
                         >
@@ -341,6 +349,42 @@ export default function Navbar() {
           </div>
         )}
       </header>
+
+      {/* Global Toast Overlay */}
+      {toasts.length > 0 && (
+        <div className="fixed top-16 right-4 sm:right-6 z-50 flex flex-col gap-2 max-w-sm w-full pointer-events-none">
+          {toasts.map((t) => (
+            <div
+              key={t.id}
+              className={`pointer-events-auto flex items-start gap-3 rounded-2xl border px-4 py-3 glass backdrop-blur-xl shadow-2xl animate-slide-in-right ${
+                t.type === "success"
+                  ? "border-emerald-500/30 bg-emerald-950/80 text-emerald-200"
+                  : t.type === "error"
+                  ? "border-red-500/30 bg-red-950/80 text-red-200"
+                  : "border-cyan-500/30 bg-cyan-950/80 text-cyan-200"
+              }`}
+            >
+              {t.type === "success" ? (
+                <CheckCircle2 className="h-5 w-5 text-emerald-400 shrink-0 mt-0.5" />
+              ) : t.type === "error" ? (
+                <AlertCircle className="h-5 w-5 text-red-400 shrink-0 mt-0.5" />
+              ) : (
+                <Info className="h-5 w-5 text-cyan-400 shrink-0 mt-0.5" />
+              )}
+              <div className="flex-1 min-w-0">
+                {t.title && <div className="text-xs font-bold mb-0.5">{t.title}</div>}
+                <p className="text-xs leading-relaxed opacity-90">{t.message}</p>
+              </div>
+              <button
+                onClick={() => removeToast(t.id)}
+                className="text-zinc-400 hover:text-white transition-colors shrink-0"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
 
       {/* Global Multi-Wallet Modal */}
       <WalletModal />

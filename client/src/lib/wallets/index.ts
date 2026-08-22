@@ -78,11 +78,39 @@ export const WALLET_PROVIDERS: WalletProviderInfo[] = [
   },
 ];
 
+interface CustomWindow extends Window {
+  xBullSDK?: {
+    getPublicKey?: () => Promise<string>;
+    signXDR?: (xdr: string, opts?: { networkPassphrase?: string }) => Promise<string | { signedTxXdr?: string; xdr?: string }>;
+  };
+  xbull?: {
+    getPublicKey?: () => Promise<string>;
+    signXDR?: (xdr: string, opts?: { networkPassphrase?: string }) => Promise<string | { signedTxXdr?: string; xdr?: string }>;
+  };
+  rabet?: {
+    connect?: () => Promise<{ publicKey?: string; address?: string } | string>;
+    sign?: (xdr: string, network: string) => Promise<{ xdr?: string } | string>;
+  };
+  hanaWallet?: {
+    stellar?: {
+      getAccount?: () => Promise<{ address?: string } | string[] | string>;
+      signTransaction?: (xdr: string) => Promise<string | { signedTxXdr?: string; xdr?: string }>;
+    };
+  };
+  hana?: {
+    stellar?: {
+      getAccount?: () => Promise<{ address?: string } | string[] | string>;
+      signTransaction?: (xdr: string) => Promise<string | { signedTxXdr?: string; xdr?: string }>;
+    };
+  };
+}
+
 /**
  * Checks if a specific wallet extension is available in the browser window
  */
 export async function isWalletAvailable(type: WalletType): Promise<boolean> {
   if (typeof window === "undefined") return false;
+  const win = window as unknown as CustomWindow;
 
   switch (type) {
     case "freighter": {
@@ -97,20 +125,13 @@ export async function isWalletAvailable(type: WalletType): Promise<boolean> {
       return true; // Albedo is web-based, universally available
 
     case "xbull":
-      return (
-        typeof (window as any).xBullSDK !== "undefined" ||
-        typeof (window as any).xbull !== "undefined" ||
-        true // xBull also has web connector fallback
-      );
+      return typeof win.xBullSDK !== "undefined" || typeof win.xbull !== "undefined" || true;
 
     case "rabet":
-      return typeof (window as any).rabet !== "undefined";
+      return typeof win.rabet !== "undefined";
 
     case "hana":
-      return (
-        typeof (window as any).hanaWallet !== "undefined" ||
-        typeof (window as any).hana !== "undefined"
-      );
+      return typeof win.hanaWallet?.stellar !== "undefined" || typeof win.hana?.stellar !== "undefined";
 
     case "secret_key":
     case "demo":
@@ -128,10 +149,7 @@ export async function connectWallet(
   type: WalletType,
   options?: { secretKey?: string; networkPassphrase?: string }
 ): Promise<WalletConnectionResult> {
-  const networkPassphrase =
-    options?.networkPassphrase ??
-    process.env.NEXT_PUBLIC_NETWORK_PASSPHRASE ??
-    "Test SDF Network ; September 2015";
+  const win = typeof window !== "undefined" ? (window as unknown as CustomWindow) : ({} as CustomWindow);
 
   switch (type) {
     case "freighter": {
@@ -149,8 +167,9 @@ export async function connectWallet(
           walletType: "freighter",
           walletName: "Freighter",
         };
-      } catch (err: any) {
-        if (err?.message?.includes("reject") || err?.message?.includes("denied")) {
+      } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : String(err);
+        if (message.includes("reject") || message.includes("denied")) {
           throw new Error("Freighter connection request was rejected by user.");
         }
         throw new Error(
@@ -172,18 +191,18 @@ export async function connectWallet(
           walletType: "albedo",
           walletName: "Albedo",
         };
-      } catch (err: any) {
-        if (err?.message?.includes("reject") || err?.message?.includes("denied") || err?.message?.includes("canceled")) {
+      } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : String(err);
+        if (message.includes("reject") || message.includes("denied") || message.includes("canceled")) {
           throw new Error("Albedo authentication was cancelled by user.");
         }
-        throw new Error(err?.message || "Albedo connection failed.");
+        throw new Error(message || "Albedo connection failed.");
       }
     }
 
     case "xbull": {
       try {
-        // Check window extension first
-        const xbullExt = (window as any).xBullSDK || (window as any).xbull;
+        const xbullExt = win.xBullSDK || win.xbull;
         if (xbullExt && typeof xbullExt.getPublicKey === "function") {
           const pubkey = await xbullExt.getPublicKey();
           if (pubkey) {
@@ -195,7 +214,6 @@ export async function connectWallet(
           }
         }
 
-        // Fallback to @creit.tech/xbull-wallet-connect
         const { xBullWalletConnect } = await import("@creit.tech/xbull-wallet-connect");
         const bridge = new xBullWalletConnect();
         const address = await bridge.connect();
@@ -211,8 +229,9 @@ export async function connectWallet(
           walletType: "xbull",
           walletName: "xBull Wallet",
         };
-      } catch (err: any) {
-        if (err?.message?.includes("reject") || err?.message?.includes("denied")) {
+      } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : String(err);
+        if (message.includes("reject") || message.includes("denied")) {
           throw new Error("xBull connection request was rejected.");
         }
         throw new Error("xBull Wallet connection failed or was cancelled.");
@@ -220,13 +239,13 @@ export async function connectWallet(
     }
 
     case "rabet": {
-      const rabet = (window as any).rabet;
-      if (!rabet) {
+      const rabet = win.rabet;
+      if (!rabet || typeof rabet.connect !== "function") {
         throw new Error("Rabet extension not found. Please install Rabet from rabet.io");
       }
       try {
         const res = await rabet.connect();
-        const pubkey = res?.publicKey || res?.address || res;
+        const pubkey = typeof res === "string" ? res : res?.publicKey || res?.address;
         if (typeof pubkey !== "string" || !pubkey.startsWith("G")) {
           throw new Error("Invalid response from Rabet");
         }
@@ -235,19 +254,24 @@ export async function connectWallet(
           walletType: "rabet",
           walletName: "Rabet",
         };
-      } catch (err: any) {
-        throw new Error(err?.message || "Failed to connect to Rabet");
+      } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : String(err);
+        throw new Error(message || "Failed to connect to Rabet");
       }
     }
 
     case "hana": {
-      const hana = (window as any).hanaWallet?.stellar || (window as any).hana?.stellar;
-      if (!hana) {
+      const hana = win.hanaWallet?.stellar || win.hana?.stellar;
+      if (!hana || typeof hana.getAccount !== "function") {
         throw new Error("Hana Wallet extension not found. Please install Hana Wallet.");
       }
       try {
         const account = await hana.getAccount();
-        const address = Array.isArray(account) ? account[0] : (account?.address || account);
+        const address = Array.isArray(account)
+          ? account[0]
+          : typeof account === "string"
+          ? account
+          : account?.address;
         if (!address || typeof address !== "string") {
           throw new Error("Could not retrieve account from Hana Wallet");
         }
@@ -256,8 +280,9 @@ export async function connectWallet(
           walletType: "hana",
           walletName: "Hana Wallet",
         };
-      } catch (err: any) {
-        throw new Error(err?.message || "Failed to connect to Hana Wallet");
+      } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : String(err);
+        throw new Error(message || "Failed to connect to Hana Wallet");
       }
     }
 
@@ -320,6 +345,8 @@ export async function signTransactionWithWallet(
     process.env.NEXT_PUBLIC_NETWORK_PASSPHRASE ??
     "Test SDF Network ; September 2015";
 
+  const win = typeof window !== "undefined" ? (window as unknown as CustomWindow) : ({} as CustomWindow);
+
   switch (walletType) {
     case "freighter": {
       try {
@@ -327,8 +354,9 @@ export async function signTransactionWithWallet(
           networkPassphrase,
         });
         return result.signedTxXdr;
-      } catch (err: any) {
-        if (err?.message?.includes("reject") || err?.message?.includes("denied")) {
+      } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : String(err);
+        if (message.includes("reject") || message.includes("denied")) {
           throw new Error("Transaction signature rejected in Freighter");
         }
         throw new Error("Failed to sign transaction with Freighter");
@@ -345,20 +373,21 @@ export async function signTransactionWithWallet(
           throw new Error("No signed transaction returned by Albedo");
         }
         return res.signed_envelope_xdr;
-      } catch (err: any) {
-        if (err?.message?.includes("reject") || err?.message?.includes("denied") || err?.message?.includes("canceled")) {
+      } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : String(err);
+        if (message.includes("reject") || message.includes("denied") || message.includes("canceled")) {
           throw new Error("Transaction signature was cancelled in Albedo");
         }
-        throw new Error(err?.message || "Failed to sign transaction with Albedo");
+        throw new Error(message || "Failed to sign transaction with Albedo");
       }
     }
 
     case "xbull": {
       try {
-        const xbullExt = (window as any).xBullSDK || (window as any).xbull;
+        const xbullExt = win.xBullSDK || win.xbull;
         if (xbullExt && typeof xbullExt.signXDR === "function") {
           const signed = await xbullExt.signXDR(txXdr, { networkPassphrase });
-          return typeof signed === "string" ? signed : signed?.signedTxXdr || signed?.xdr;
+          return typeof signed === "string" ? signed : signed?.signedTxXdr || signed?.xdr || "";
         }
 
         const { xBullWalletConnect } = await import("@creit.tech/xbull-wallet-connect");
@@ -372,30 +401,33 @@ export async function signTransactionWithWallet(
           bridge.closeConnections();
         } catch {}
         return signedXdr;
-      } catch (err: any) {
-        throw new Error(err?.message || "Failed to sign transaction with xBull");
+      } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : String(err);
+        throw new Error(message || "Failed to sign transaction with xBull");
       }
     }
 
     case "rabet": {
-      const rabet = (window as any).rabet;
-      if (!rabet) throw new Error("Rabet wallet is not available");
+      const rabet = win.rabet;
+      if (!rabet || typeof rabet.sign !== "function") throw new Error("Rabet wallet is not available");
       try {
         const res = await rabet.sign(txXdr, networkPassphrase);
-        return res?.xdr || res;
-      } catch (err: any) {
-        throw new Error(err?.message || "Failed to sign transaction with Rabet");
+        return typeof res === "string" ? res : res?.xdr || "";
+      } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : String(err);
+        throw new Error(message || "Failed to sign transaction with Rabet");
       }
     }
 
     case "hana": {
-      const hana = (window as any).hanaWallet?.stellar || (window as any).hana?.stellar;
-      if (!hana) throw new Error("Hana wallet is not available");
+      const hana = win.hanaWallet?.stellar || win.hana?.stellar;
+      if (!hana || typeof hana.signTransaction !== "function") throw new Error("Hana wallet is not available");
       try {
         const signed = await hana.signTransaction(txXdr);
-        return typeof signed === "string" ? signed : signed?.signedTxXdr || signed?.xdr;
-      } catch (err: any) {
-        throw new Error(err?.message || "Failed to sign transaction with Hana");
+        return typeof signed === "string" ? signed : signed?.signedTxXdr || signed?.xdr || "";
+      } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : String(err);
+        throw new Error(message || "Failed to sign transaction with Hana");
       }
     }
 

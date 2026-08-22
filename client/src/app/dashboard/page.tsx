@@ -15,7 +15,6 @@ import {
   Shield,
   ArrowUpRight,
   Layers,
-  Sparkles,
   Store,
   CheckCircle2,
   Calendar,
@@ -32,7 +31,6 @@ function formatPrice(price: bigint): string {
 export default function DashboardPage() {
   const isConnected = useWalletStore((s) => s.isConnected);
   const address = useWalletStore((s) => s.address);
-  const isDemoMode = useWalletStore((s) => s.isDemoMode);
   const walletName = useWalletStore((s) => s.walletName);
   const setModalOpen = useWalletStore((s) => s.setModalOpen);
   const router = useRouter();

@@ -9,11 +9,8 @@ import {
   LogOut,
   Copy,
   Check,
-  AlertCircle,
-  X,
   ChevronDown,
   ExternalLink,
-  Sparkles,
 } from "lucide-react";
 
 export default function WalletConnect() {
@@ -23,9 +20,7 @@ export default function WalletConnect() {
     isDemoMode,
     isConnected,
     isConnecting,
-    error,
     setModalOpen,
-    setError,
     disconnect,
   } = useWalletStore();
 

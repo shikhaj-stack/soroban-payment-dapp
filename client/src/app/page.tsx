@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useWalletStore } from "@/lib/store";
-import { connectFreighter, getOrCreateDemoAccount } from "@/lib/stellar";
+import { getOrCreateDemoAccount, fundTestnetAccount } from "@/lib/stellar";
 import Navbar from "@/components/Navbar";
 import {
   Layers,
@@ -12,16 +12,13 @@ import {
   Zap,
   RefreshCw,
   Lock,
-  BarChart3,
   Globe,
   ChevronRight,
   Wallet,
   Coins,
   Clock,
-  ArrowUpRight,
   Store,
   Sparkles,
-  CheckCircle2,
 } from "lucide-react";
 
 const FEATURES = [
@@ -109,6 +106,7 @@ export default function Home() {
       walletName: "Demo Account",
       secretKey: demo.secretKey,
     });
+    fundTestnetAccount(demo.publicKey).catch(() => {});
     router.push("/dashboard");
   };
 

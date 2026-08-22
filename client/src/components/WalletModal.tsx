@@ -14,18 +14,13 @@ import {
   X,
   Sparkles,
   Key,
-  Shield,
   ArrowUpRight,
   Loader2,
-  CheckCircle2,
   AlertCircle,
   ExternalLink,
   ChevronRight,
   Info,
   Wallet,
-  Globe,
-  Radio,
-  Zap,
 } from "lucide-react";
 
 /* ────────── Custom SVG Wallet Icons ────────── */

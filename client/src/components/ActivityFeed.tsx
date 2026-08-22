@@ -4,7 +4,6 @@ import {
   useEvents,
   formatEvent,
   formatTimestamp,
-  shortenHash,
 } from "@/hooks/useEvents";
 import { RefreshCw, ArrowUpRight, Activity, Rss } from "lucide-react";
 
@@ -13,11 +12,12 @@ function EventDot({ topic }: { topic: string }) {
     subscribed: "bg-emerald-400 shadow-emerald-400/40",
     billing: "bg-blue-400 shadow-blue-400/40",
     cancelled: "bg-red-400 shadow-red-400/40",
-  };
-  const labels: Record<string, string> = {
-    subscribed: "Sub",
-    billing: "Bill",
-    cancelled: "Cancel",
+    deposited: "bg-cyan-400 shadow-cyan-400/40",
+    withdrawn: "bg-amber-400 shadow-amber-400/40",
+    paused: "bg-yellow-400 shadow-yellow-400/40",
+    resumed: "bg-emerald-400 shadow-emerald-400/40",
+    tier_created: "bg-purple-400 shadow-purple-400/40",
+    merchant_withdrawn: "bg-violet-400 shadow-violet-400/40",
   };
 
   return (

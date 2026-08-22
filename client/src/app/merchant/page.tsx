@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { useWalletStore } from "@/lib/store";
+import { useWalletStore, useToastStore } from "@/lib/store";
 import {
   useMerchantEarnings,
   useWithdrawMerchantEarnings,
@@ -9,7 +9,6 @@ import {
   useChargeBilling,
   useBatchBilling,
   useAllTiers,
-  type SubscriptionTier,
 } from "@/hooks/useContract";
 import Navbar from "@/components/Navbar";
 import ActivityFeed from "@/components/ActivityFeed";
@@ -17,20 +16,15 @@ import TransactionTracker from "@/components/TransactionTracker";
 import {
   Store,
   DollarSign,
-  TrendingUp,
   Users,
   Layers,
   PlusCircle,
   Play,
-  CheckCircle2,
-  AlertCircle,
   Loader2,
-  X,
-  ArrowUpRight,
   Sparkles,
   Zap,
-  Calendar,
   Wallet,
+  Coins,
 } from "lucide-react";
 
 function formatXLM(amount: bigint | number): string {
@@ -88,9 +82,9 @@ const INITIAL_SUBSCRIBERS: MockSubscriberRecord[] = [
 
 export default function MerchantPortal() {
   const isConnected = useWalletStore((s) => s.isConnected);
-  const address = useWalletStore((s) => s.address);
   const walletName = useWalletStore((s) => s.walletName);
   const setModalOpen = useWalletStore((s) => s.setModalOpen);
+  const addToast = useToastStore((s) => s.addToast);
 
   const { earnings, refetch: refetchEarnings } = useMerchantEarnings();
   const { tiers, refetch: refetchTiers } = useAllTiers();
@@ -105,11 +99,6 @@ export default function MerchantPortal() {
   const [newTierPrice, setNewTierPrice] = useState("");
   const [newTierDays, setNewTierDays] = useState("30");
 
-  const [toast, setToast] = useState<{
-    type: "success" | "error";
-    msg: string;
-  } | null>(null);
-
   useEffect(() => {
     if (isConnected) {
       refetchEarnings();
@@ -117,27 +106,14 @@ export default function MerchantPortal() {
     }
   }, [isConnected, refetchEarnings, refetchTiers]);
 
-  useEffect(() => {
-    if (toast) {
-      const t = setTimeout(() => setToast(null), 4500);
-      return () => clearTimeout(t);
-    }
-  }, [toast]);
-
   const handleWithdrawAll = async () => {
     if (earnings <= 0n) return;
     try {
       await withdrawEarnings(earnings);
-      setToast({
-        type: "success",
-        msg: `Claimed ${formatXLM(earnings)} XLM revenue directly into merchant wallet!`,
-      });
+      addToast("success", `Claimed ${formatXLM(earnings)} XLM revenue directly into your merchant wallet!`, "Earnings Claimed");
       refetchEarnings();
     } catch (err) {
-      setToast({
-        type: "error",
-        msg: err instanceof Error ? err.message : "Withdrawal failed",
-      });
+      addToast("error", err instanceof Error ? err.message : "Withdrawal failed", "Claim Error");
     }
   };
 
@@ -147,31 +123,23 @@ export default function MerchantPortal() {
     const priceBigInt = BigInt(Math.floor(parseFloat(newTierPrice) * 10_000_000));
     const intervalSec = BigInt(parseInt(newTierDays || "30") * 86400);
     const nextTierId = (tiers?.length || 0) + 1;
+    const tierTitle = newTierName.trim() || `Tier ${nextTierId}`;
 
     try {
-      await createTier(nextTierId, priceBigInt, intervalSec);
-      setToast({
-        type: "success",
-        msg: `Tier #${nextTierId} created on Soroban smart contract!`,
-      });
+      await createTier(nextTierId, priceBigInt, intervalSec, tierTitle);
+      addToast("success", `Tier #${nextTierId} ("${tierTitle}") published on smart contract!`, "Tier Published");
       setNewTierName("");
       setNewTierPrice("");
       refetchTiers();
     } catch (err) {
-      setToast({
-        type: "error",
-        msg: err instanceof Error ? err.message : "Failed to create tier",
-      });
+      addToast("error", err instanceof Error ? err.message : "Failed to create tier", "Tier Error");
     }
   };
 
   const handleSingleCharge = async (userAddress: string) => {
     try {
       await chargeBilling(userAddress);
-      setToast({
-        type: "success",
-        msg: `Billed subscription for ${userAddress.slice(0, 4)}...${userAddress.slice(-4)}`,
-      });
+      addToast("success", `Billed recurring subscription for ${userAddress.slice(0, 4)}...${userAddress.slice(-4)}`, "Billing Executed");
       setSubscribers((prev) =>
         prev.map((s) =>
           s.address === userAddress
@@ -181,10 +149,7 @@ export default function MerchantPortal() {
       );
       refetchEarnings();
     } catch (err) {
-      setToast({
-        type: "error",
-        msg: err instanceof Error ? err.message : "Billing failed",
-      });
+      addToast("error", err instanceof Error ? err.message : "Billing failed", "Billing Error");
     }
   };
 
@@ -197,10 +162,7 @@ export default function MerchantPortal() {
 
     try {
       await batchBilling(dueUsers);
-      setToast({
-        type: "success",
-        msg: `Atomic batch billing executed for ${dueUsers.length} subscribers!`,
-      });
+      addToast("success", `Atomic batch billing executed for ${dueUsers.length} subscribers!`, "Batch Billing Complete");
       setSubscribers((prev) =>
         prev.map((s) =>
           s.status === "due"
@@ -210,10 +172,7 @@ export default function MerchantPortal() {
       );
       refetchEarnings();
     } catch (err) {
-      setToast({
-        type: "error",
-        msg: err instanceof Error ? err.message : "Batch billing failed",
-      });
+      addToast("error", err instanceof Error ? err.message : "Batch billing failed", "Batch Error");
     }
   };
 
@@ -234,7 +193,7 @@ export default function MerchantPortal() {
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-zinc-800/80 pb-6">
               <div>
                 <div className="flex items-center gap-2.5 mb-1">
-                  <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-violet-600/20 border border-violet-500/30 text-violet-300">
+                  <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-violet-600/20 border border-violet-500/30 text-violet-300 shadow-md">
                     <Store className="h-4 w-4" />
                   </div>
                   <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-zinc-100">
@@ -242,13 +201,13 @@ export default function MerchantPortal() {
                   </h1>
                 </div>
                 <p className="text-xs sm:text-sm text-zinc-400">
-                  Manage subscription tiers, track contract earnings, and execute automated billing cycles.
+                  Manage subscription tiers, track smart contract earnings, and execute automated batch billing cycles.
                 </p>
               </div>
 
               {isConnected ? (
                 <div className="flex items-center gap-3">
-                  <span className="flex items-center gap-1.5 rounded-full bg-emerald-500/10 border border-emerald-500/20 px-3 py-1 text-xs font-semibold text-emerald-300">
+                  <span className="flex items-center gap-1.5 rounded-full bg-emerald-500/10 border border-emerald-500/20 px-3.5 py-1.5 text-xs font-semibold text-emerald-300">
                     <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />
                     Admin Mode Active ({walletName || "Connected"})
                   </span>
@@ -256,37 +215,13 @@ export default function MerchantPortal() {
               ) : (
                 <button
                   onClick={() => setModalOpen(true)}
-                  className="flex items-center gap-2 rounded-xl bg-violet-600 hover:bg-violet-500 px-4 py-2 text-xs font-semibold text-white shadow-lg shadow-violet-900/30 transition-all"
+                  className="flex items-center gap-2 rounded-xl bg-violet-600 hover:bg-violet-500 px-4 py-2.5 text-xs font-semibold text-white shadow-lg shadow-violet-900/30 transition-all"
                 >
                   <Wallet className="h-3.5 w-3.5" />
                   Connect Merchant Wallet
                 </button>
               )}
             </div>
-
-            {/* Toast */}
-            {toast && (
-              <div
-                className={`animate-slide-in-right flex items-start gap-3 rounded-2xl border px-4 py-3 glass backdrop-blur-md shadow-xl ${
-                  toast.type === "success"
-                    ? "border-emerald-500/30 bg-emerald-950/40 text-emerald-300"
-                    : "border-red-500/30 bg-red-950/40 text-red-300"
-                }`}
-              >
-                {toast.type === "success" ? (
-                  <CheckCircle2 className="h-5 w-5 text-emerald-400 shrink-0 mt-0.5" />
-                ) : (
-                  <AlertCircle className="h-5 w-5 text-red-400 shrink-0 mt-0.5" />
-                )}
-                <p className="text-sm font-medium flex-1">{toast.msg}</p>
-                <button
-                  onClick={() => setToast(null)}
-                  className="text-zinc-400 hover:text-zinc-200 transition-colors shrink-0"
-                >
-                  <X className="h-4 w-4" />
-                </button>
-              </div>
-            )}
 
             {/* Stats Overview */}
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -306,7 +241,7 @@ export default function MerchantPortal() {
                   <span className="text-xs font-bold text-violet-400">XLM</span>
                 </div>
                 <p className="text-[11px] text-zinc-500 mt-1">
-                  Accumulated in Soroban contract
+                  Accumulated in Soroban escrow
                 </p>
               </div>
 
@@ -367,7 +302,7 @@ export default function MerchantPortal() {
                   {withdrawing ? (
                     <Loader2 className="h-3.5 w-3.5 animate-spin" />
                   ) : (
-                    <DollarSign className="h-3.5 w-3.5" />
+                    <Coins className="h-3.5 w-3.5" />
                   )}
                   {withdrawing ? "Claiming..." : "Claim All Earnings"}
                 </button>
@@ -386,7 +321,7 @@ export default function MerchantPortal() {
                         Subscriber Directory & Billing Engine
                       </h3>
                       <p className="text-xs text-zinc-400 mt-0.5">
-                        Trigger interval payments from user pre-funded deposits.
+                        Trigger interval payments from user pre-funded escrow balances.
                       </p>
                     </div>
 
@@ -439,7 +374,7 @@ export default function MerchantPortal() {
                             disabled={charging || sub.status !== "due" || !isConnected}
                             className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold transition-all ${
                               sub.status === "due"
-                                ? "bg-violet-600 hover:bg-violet-500 text-white shadow-md"
+                                ? "bg-violet-600 hover:bg-violet-500 text-white shadow-md shadow-violet-900/20"
                                 : "bg-zinc-800/60 text-zinc-600 cursor-not-allowed border border-zinc-800"
                             }`}
                           >
@@ -513,7 +448,7 @@ export default function MerchantPortal() {
                     <button
                       type="submit"
                       disabled={creatingTier || !newTierPrice || !isConnected}
-                      className="w-full flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 disabled:bg-zinc-800 disabled:text-zinc-600 py-2.5 text-xs font-bold text-white shadow-lg shadow-emerald-900/30 transition-all"
+                      className="w-full flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 disabled:bg-zinc-800 disabled:text-zinc-600 py-3 text-xs font-bold text-white shadow-lg shadow-emerald-900/30 transition-all"
                     >
                       {creatingTier ? (
                         <Loader2 className="h-3.5 w-3.5 animate-spin" />
