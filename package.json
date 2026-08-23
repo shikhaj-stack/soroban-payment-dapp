@@ -1,0 +1,12 @@
+{
+  "name": "soroban-payment-dapp",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "npm --prefix client run dev",
+    "build": "npm --prefix client run build",
+    "start": "npm --prefix client run start",
+    "lint": "npm --prefix client run lint"
+  },
+  "packageManager": "npm@10"
+}
