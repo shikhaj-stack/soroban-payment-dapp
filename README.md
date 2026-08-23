@@ -342,8 +342,8 @@ Follow these steps to run SorobanPay locally in less than 2 minutes:
 
 ```bash
 # Clone repository
-git clone https://github.com/your-username/payment-contract.git
-cd payment-contract/payment-contract-main/client
+git clone https://github.com/shikhaj-stack/soroban-payment-dapp.git
+cd soroban-payment-dapp/client
 
 # Install frontend dependencies
 npm install
@@ -382,15 +382,26 @@ Open [**http://localhost:3000**](http://localhost:3000) in your browser.
 
 ## 🛠️ Deployment & Scripts
 
+### 🌐 Deploying Frontend to Vercel
+
+When deploying to [Vercel](https://vercel.com):
+1. Import the repository `shikhaj-stack/soroban-payment-dapp`.
+2. Under **Project Settings** > **General**, set **Root Directory** to `client`.
+3. Vercel will automatically detect the **Next.js** framework preset.
+4. (Optional) Add your environment variables in Vercel Project Settings.
+5. Click **Deploy**.
+
+### 📜 Smart Contract Deployer
+
 SorobanPay provides one-command automated build, testnet identity creation, deployment, initialization, and tier seeding.
 
-### Option A: Cross-Platform Node.js Deployer (Recommended)
+#### Option A: Cross-Platform Node.js Deployer (Recommended)
 
 ```bash
 node scripts/deploy.js
 ```
 
-### Option B: Bash Deployer
+#### Option B: Bash Deployer
 
 ```bash
 chmod +x scripts/deploy.sh
