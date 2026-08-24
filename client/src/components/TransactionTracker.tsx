@@ -1,6 +1,7 @@
 "use client";
 
 import { useTxStore, type TxRecord } from "@/lib/store";
+import { getExplorerUrl } from "@/lib/stellar";
 import {
   Clock,
   CheckCircle2,
@@ -121,10 +122,11 @@ export default function TransactionTracker() {
               <div className="flex items-center gap-1.5 mt-0.5">
                 {!tx.hash.startsWith("pending-") ? (
                   <a
-                    href={`https://stellar.expert/testnet/tx/${tx.hash}`}
+                    href={getExplorerUrl("tx", tx.hash)}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="flex items-center gap-1 text-[10px] text-zinc-600 hover:text-violet-400 font-mono transition-colors"
+                    title="View Transaction on Stellar Expert"
                   >
                     {shortenHash(tx.hash)}
                     <ExternalLink className="h-2.5 w-2.5" />

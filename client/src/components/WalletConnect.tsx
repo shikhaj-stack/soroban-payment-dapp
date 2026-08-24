@@ -3,6 +3,8 @@
 import { useState } from "react";
 import { useWalletStore } from "@/lib/store";
 import { shortenAddress } from "@/hooks/useEvents";
+import { useWalletBalance } from "@/hooks/useWalletBalance";
+import { getExplorerUrl } from "@/lib/stellar";
 import WalletModal from "./WalletModal";
 import {
   Wallet,
@@ -11,6 +13,9 @@ import {
   Check,
   ChevronDown,
   ExternalLink,
+  Coins,
+  RefreshCw,
+  ArrowUpRight,
 } from "lucide-react";
 
 export default function WalletConnect() {
@@ -23,6 +28,8 @@ export default function WalletConnect() {
     setModalOpen,
     disconnect,
   } = useWalletStore();
+
+  const { formattedXlm, loading: balanceLoading, refetch } = useWalletBalance(address);
 
   const [copied, setCopied] = useState(false);
   const [showDropdown, setShowDropdown] = useState(false);
@@ -40,6 +47,23 @@ export default function WalletConnect() {
     return (
       <div className="relative">
         <div className="flex items-center gap-1.5 sm:gap-2">
+          {/* Balance Pill */}
+          <div
+            className="flex items-center gap-1.5 rounded-xl border border-violet-500/30 bg-violet-500/10 px-2.5 py-1.5 text-xs font-mono text-violet-300 glass-subtle shadow-sm"
+            title="Wallet native XLM balance"
+          >
+            <Coins className="h-3.5 w-3.5 text-violet-400" />
+            <span className="font-semibold">{formattedXlm}</span>
+            <button
+              onClick={() => refetch()}
+              disabled={balanceLoading}
+              title="Refresh wallet balance"
+              className="text-violet-400 hover:text-violet-200 p-0.5"
+            >
+              <RefreshCw className={`h-2.5 w-2.5 ${balanceLoading ? "animate-spin text-cyan-400" : ""}`} />
+            </button>
+          </div>
+
           {/* Main Wallet pill */}
           <button
             onClick={() => setShowDropdown(!showDropdown)}
@@ -96,11 +120,15 @@ export default function WalletConnect() {
                 <div className="text-[11px] font-mono text-zinc-400 break-all mt-1">
                   {address}
                 </div>
+                <div className="mt-2 rounded-lg bg-zinc-900/60 border border-zinc-800 p-2 flex items-center justify-between text-xs">
+                  <span className="text-zinc-400 text-[11px]">Wallet XLM:</span>
+                  <span className="font-mono font-bold text-violet-300">{formattedXlm}</span>
+                </div>
               </div>
 
               <div className="space-y-1">
                 <a
-                  href={`https://stellar.expert/testnet/account/${address}`}
+                  href={getExplorerUrl("account", address)}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="flex items-center justify-between w-full rounded-xl px-2.5 py-2 text-xs text-zinc-300 hover:bg-zinc-850 transition-colors"
@@ -109,6 +137,7 @@ export default function WalletConnect() {
                     <ExternalLink className="h-3.5 w-3.5 text-zinc-400" />
                     View on Stellar Expert
                   </span>
+                  <ArrowUpRight className="h-3 w-3 text-zinc-500" />
                 </a>
 
                 <button

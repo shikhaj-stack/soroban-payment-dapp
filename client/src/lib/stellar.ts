@@ -2,14 +2,98 @@ import * as StellarSdk from "@stellar/stellar-sdk";
 import freighterApi from "@stellar/freighter-api";
 
 const RPC_URL = process.env.NEXT_PUBLIC_RPC_URL ?? "https://soroban-testnet.stellar.org";
+const HORIZON_URL = process.env.NEXT_PUBLIC_HORIZON_URL ?? "https://horizon-testnet.stellar.org";
 const NETWORK_PASSPHRASE =
   process.env.NEXT_PUBLIC_NETWORK_PASSPHRASE ?? "Test SDF Network ; September 2015";
 const FRIENDBOT_URL = "https://friendbot.stellar.org";
+export const CONTRACT_ADDRESS =
+  process.env.NEXT_PUBLIC_CONTRACT_ADDRESS ?? "CBKMFIRGM6VRW2ZMJCBIGFT7CNFUQJ5GFO7GUY2ML6RQKVZ3VD3HXAJP";
 
 export const server = new StellarSdk.rpc.Server(RPC_URL);
+export const horizonServer = new StellarSdk.Horizon.Server(HORIZON_URL);
 
 // Fallback dummy account for simulating read-only calls
 const DUMMY_PUBLIC_KEY = "GBRPYHIL2CI3FNQ4BXLFMNDLFJUNPU2HY3ZMFXYORTMB35THQI2TTOHS";
+
+/* ────────── Stellar Explorer URL Generator ────────── */
+
+export type ExplorerType = "root" | "account" | "tx" | "contract";
+
+/**
+ * Builds valid Stellar Expert Testnet URLs
+ * Formats:
+ * - root: https://stellar.expert/explorer/testnet/
+ * - account: https://stellar.expert/explorer/testnet/account/{address}
+ * - tx: https://stellar.expert/explorer/testnet/tx/{hash}
+ * - contract: https://stellar.expert/explorer/testnet/contract/{contractId}
+ */
+export function getExplorerUrl(type: ExplorerType = "root", id?: string): string {
+  const base = "https://stellar.expert/explorer/testnet";
+  if (type === "root" || !id) {
+    return `${base}/`;
+  }
+  switch (type) {
+    case "account":
+      return `${base}/account/${encodeURIComponent(id)}`;
+    case "tx":
+      return `${base}/tx/${encodeURIComponent(id)}`;
+    case "contract":
+      return `${base}/contract/${encodeURIComponent(id || CONTRACT_ADDRESS)}`;
+    default:
+      return `${base}/`;
+  }
+}
+
+/* ────────── On-Chain Wallet Balance Helpers ────────── */
+
+export interface TokenBalance {
+  assetType: string;
+  assetCode?: string;
+  assetIssuer?: string;
+  balance: string;
+}
+
+export interface AccountBalanceInfo {
+  isFunded: boolean;
+  xlm: string;
+  balances: TokenBalance[];
+}
+
+/**
+ * Fetches the native XLM and token balances for any Stellar address via Horizon.
+ * Gracefully returns 0 XLM for unfunded testnet accounts.
+ */
+export async function fetchAccountBalances(publicKey: string): Promise<AccountBalanceInfo> {
+  if (!publicKey || !publicKey.startsWith("G") || publicKey.length !== 56) {
+    return { isFunded: false, xlm: "0.0000000", balances: [] };
+  }
+
+  try {
+    const account = await horizonServer.loadAccount(publicKey);
+    const balances: TokenBalance[] = (account.balances || []).map((b: any) => ({
+      assetType: b.asset_type,
+      assetCode: b.asset_code,
+      assetIssuer: b.asset_issuer,
+      balance: b.balance,
+    }));
+
+    const native = balances.find((b) => b.assetType === "native");
+    const xlm = native ? native.balance : "0.0000000";
+
+    return {
+      isFunded: true,
+      xlm,
+      balances,
+    };
+  } catch (err: any) {
+    // 404 means the account is valid but not yet created on the Stellar ledger
+    if (err?.response?.status === 404 || err?.status === 404 || String(err?.message).includes("404")) {
+      return { isFunded: false, xlm: "0.0000000", balances: [] };
+    }
+    console.warn("Horizon balance query notice:", err);
+    return { isFunded: false, xlm: "0.0000000", balances: [] };
+  }
+}
 
 /* ────────── Wallet & Friendbot Helpers ────────── */
 
@@ -233,4 +317,4 @@ export async function readContract(
   return retval;
 }
 
-export { StellarSdk, RPC_URL, NETWORK_PASSPHRASE };
+export { StellarSdk, RPC_URL, HORIZON_URL, NETWORK_PASSPHRASE };

@@ -4,6 +4,8 @@ import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useWalletStore } from "@/lib/store";
 import { useBalance, useSubscriber } from "@/hooks/useContract";
+import { useWalletBalance } from "@/hooks/useWalletBalance";
+import { getExplorerUrl, CONTRACT_ADDRESS } from "@/lib/stellar";
 import Navbar from "@/components/Navbar";
 import SubscriptionTiers from "@/components/SubscriptionTiers";
 import ActivityFeed from "@/components/ActivityFeed";
@@ -18,6 +20,9 @@ import {
   Store,
   CheckCircle2,
   Calendar,
+  Coins,
+  RefreshCw,
+  Droplets,
 } from "lucide-react";
 
 function formatPrice(price: bigint): string {
@@ -35,15 +40,23 @@ export default function DashboardPage() {
   const setModalOpen = useWalletStore((s) => s.setModalOpen);
   const router = useRouter();
 
-  const { balance, refetch: refetchBalance } = useBalance(address || null);
+  const { balance, refetch: refetchContractBalance } = useBalance(address || null);
   const { subscriber, refetch: refetchSub } = useSubscriber(address || null);
+  const {
+    formattedXlm,
+    loading: walletBalanceLoading,
+    funding,
+    refetch: refetchWalletBalance,
+    fundWithFriendbot,
+  } = useWalletBalance(address);
 
   useEffect(() => {
     if (isConnected && address) {
-      refetchBalance();
+      refetchContractBalance();
       refetchSub();
+      refetchWalletBalance();
     }
-  }, [isConnected, address, refetchBalance, refetchSub]);
+  }, [isConnected, address, refetchContractBalance, refetchSub, refetchWalletBalance]);
 
   return (
     <div className="flex flex-1 flex-col min-h-screen relative overflow-hidden bg-zinc-950">
@@ -75,21 +88,32 @@ export default function DashboardPage() {
               </div>
 
               {isConnected && (
-                <div className="flex items-center gap-2">
+                <div className="flex flex-wrap items-center gap-2">
                   <button
                     onClick={() => router.push("/merchant")}
                     className="flex items-center gap-1.5 rounded-xl border border-violet-500/30 bg-violet-500/10 hover:bg-violet-500/20 px-3 py-1.5 text-xs font-semibold text-violet-300 transition-all"
                   >
                     <Store className="h-3.5 w-3.5" />
-                    Switch to Merchant Portal
+                    Merchant Portal
                   </button>
                   <a
-                    href={`https://stellar.expert/testnet/account/${address}`}
+                    href={getExplorerUrl("account", address)}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="flex items-center gap-1 rounded-xl border border-zinc-800 bg-zinc-900/60 hover:bg-zinc-850 px-3 py-1.5 text-xs text-zinc-400 hover:text-zinc-200 transition-all"
+                    title="View your account ledger on Stellar Expert"
                   >
-                    Stellar Expert
+                    Account Explorer
+                    <ArrowUpRight className="h-3 w-3" />
+                  </a>
+                  <a
+                    href={getExplorerUrl("contract", CONTRACT_ADDRESS)}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="hidden sm:flex items-center gap-1 rounded-xl border border-zinc-800 bg-zinc-900/60 hover:bg-zinc-850 px-3 py-1.5 text-xs text-zinc-400 hover:text-zinc-200 transition-all"
+                    title="View Soroban smart contract on Stellar Expert"
+                  >
+                    Contract Explorer
                     <ArrowUpRight className="h-3 w-3" />
                   </a>
                 </div>
@@ -135,30 +159,75 @@ export default function DashboardPage() {
               </div>
             ) : (
               <>
-                {/* Stats Cards */}
-                <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
+                {/* Stats Cards - prominently featuring both Wallet Balance and Contract Deposit */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
+                  {/* Card 1: Live On-Chain Wallet Balance */}
+                  <div className="rounded-2xl border border-violet-500/30 bg-violet-950/20 glass-subtle p-4 sm:p-5 flex flex-col justify-between shadow-lg shadow-violet-950/30">
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="text-[11px] text-violet-300 uppercase tracking-wider font-bold">
+                        Wallet Balance
+                      </span>
+                      <div className="flex items-center gap-1.5">
+                        <button
+                          onClick={() => fundWithFriendbot()}
+                          disabled={funding}
+                          title="Quick Friendbot Faucet (+10,000 XLM)"
+                          className="flex h-7 px-2 items-center gap-1 rounded-lg border border-cyan-500/30 bg-cyan-500/10 text-cyan-300 hover:bg-cyan-500/20 text-[10px] font-semibold transition-all disabled:opacity-50"
+                        >
+                          <Droplets className="h-3 w-3 text-cyan-400" />
+                          <span>+10k</span>
+                        </button>
+                        <button
+                          onClick={() => refetchWalletBalance()}
+                          disabled={walletBalanceLoading}
+                          title="Refresh wallet balance"
+                          className="flex h-7 w-7 items-center justify-center rounded-lg border border-violet-500/30 bg-violet-500/10 text-violet-300 hover:bg-violet-500/20 transition-all"
+                        >
+                          <RefreshCw
+                            className={`h-3.5 w-3.5 ${
+                              walletBalanceLoading ? "animate-spin text-cyan-400" : ""
+                            }`}
+                          />
+                        </button>
+                      </div>
+                    </div>
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-xl sm:text-2xl font-bold font-mono text-zinc-100">
+                          {formattedXlm}
+                        </span>
+                      </div>
+                      <p className="text-[10px] text-zinc-400 mt-0.5">
+                        Native Stellar on-chain funds
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Card 2: Smart Contract Escrow Deposit */}
                   <StatCard
-                    label="Contract Balance"
+                    label="Contract Escrow"
                     value={`${formatPrice(balance)} XLM`}
-                    subtext="Pre-funded deposit"
-                    icon={<Wallet className="h-4 w-4" />}
-                    color="violet"
+                    subtext="Pre-funded deposit in contract"
+                    icon={<Shield className="h-4 w-4" />}
+                    color="cyan"
                   />
+
+                  {/* Card 3: Active Subscription Plan */}
                   <StatCard
                     label="Active Plan"
                     value={
                       subscriber?.active
                         ? `Tier ${subscriber.tier_id}`
-                        : "No Plan"
+                        : "No Active Plan"
                     }
                     subtext={
                       subscriber?.active
                         ? subscriber.paused
                           ? "Paused"
                           : "Auto-renewing"
-                        : "Inactive"
+                        : "Choose a plan below"
                     }
-                    icon={<Shield className="h-4 w-4" />}
+                    icon={<TrendingUp className="h-4 w-4" />}
                     color={
                       subscriber?.active
                         ? subscriber.paused
@@ -172,17 +241,12 @@ export default function DashboardPage() {
                       ) : undefined
                     }
                   />
-                  <StatCard
-                    label="Billing Cycle"
-                    value="30 Days"
-                    subtext="Recurring interval"
-                    icon={<Calendar className="h-4 w-4" />}
-                    color="cyan"
-                  />
+
+                  {/* Card 4: Network & Settlement */}
                   <StatCard
                     label="Stellar Network"
                     value="Testnet"
-                    subtext="Soroban SDK v25"
+                    subtext="Soroban SDK v25 · ~5s Finality"
                     icon={<CheckCircle2 className="h-4 w-4" />}
                     color="emerald"
                     badge={<span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />}

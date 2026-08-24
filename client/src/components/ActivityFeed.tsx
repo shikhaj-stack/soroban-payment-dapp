@@ -5,6 +5,7 @@ import {
   formatEvent,
   formatTimestamp,
 } from "@/hooks/useEvents";
+import { getExplorerUrl } from "@/lib/stellar";
 import { RefreshCw, ArrowUpRight, Activity, Rss } from "lucide-react";
 
 function EventDot({ topic }: { topic: string }) {
@@ -97,7 +98,7 @@ export default function ActivityFeed() {
               </div>
             </div>
             <a
-              href={`https://stellar.expert/testnet/tx/${event.txHash}`}
+              href={getExplorerUrl("tx", event.txHash)}
               target="_blank"
               rel="noopener noreferrer"
               className="shrink-0 text-zinc-700 hover:text-zinc-400 transition-colors p-0.5"

@@ -15,6 +15,7 @@ import {
   StellarSdk,
   NETWORK_PASSPHRASE,
 } from "@/lib/stellar";
+import { notifyBalanceChanged } from "./useWalletBalance";
 
 const CONTRACT_ADDRESS =
   process.env.NEXT_PUBLIC_CONTRACT_ADDRESS ?? "CBKMFIRGM6VRW2ZMJCBIGFT7CNFUQJ5GFO7GUY2ML6RQKVZ3VD3HXAJP";
@@ -406,6 +407,7 @@ function useExecuteMutation() {
         }
 
         updateTx(tempHash, { hash: txHash, status: "success" });
+        notifyBalanceChanged();
         return { hash: txHash, success: true };
       } catch (err) {
         const msg = err instanceof Error ? err.message : "Transaction failed";

@@ -14,6 +14,7 @@ import {
   useSubscriber,
   type SubscriptionTier,
 } from "@/hooks/useContract";
+import { useWalletBalance } from "@/hooks/useWalletBalance";
 import {
   Check,
   Zap,
@@ -30,6 +31,7 @@ import {
   Layers,
   ShieldCheck,
   RefreshCw,
+  Droplets,
 } from "lucide-react";
 
 const TIER_ICONS = [Zap, Star, Crown];
@@ -64,6 +66,15 @@ export default function SubscriptionTiers() {
   const { balance, refetch: refetchBalance } = useBalance(address || null);
   const { subscriber, refetch: refetchSub } = useSubscriber(address || null);
 
+  const {
+    xlmBalance,
+    formattedXlm,
+    loading: walletLoading,
+    funding,
+    refetch: refetchWalletBalance,
+    fundWithFriendbot,
+  } = useWalletBalance(address);
+
   const { mutate: subscribe, loading: subscribing } = useSubscribe();
   const { mutate: deposit, loading: depositing } = useDepositFunds();
   const { mutate: withdraw, loading: withdrawing } = useWithdrawFunds();
@@ -81,8 +92,9 @@ export default function SubscriptionTiers() {
       refetchBalance();
       refetchSub();
       refetchTiers();
+      refetchWalletBalance();
     }
-  }, [isConnected, address, refetchBalance, refetchSub, refetchTiers]);
+  }, [isConnected, address, refetchBalance, refetchSub, refetchTiers, refetchWalletBalance]);
 
   const handleSubscribe = async (tier: SubscriptionTier) => {
     if (!isConnected) {
@@ -100,6 +112,7 @@ export default function SubscriptionTiers() {
       addToast("success", `Subscribed to ${tierLabel} plan successfully!`, "Subscription Activated");
       refetchBalance();
       refetchSub();
+      refetchWalletBalance();
     } catch (err) {
       addToast("error", err instanceof Error ? err.message : "Subscription failed", "Transaction Error");
     } finally {
@@ -119,6 +132,7 @@ export default function SubscriptionTiers() {
       await deposit(stroops);
       addToast("success", `Deposited ${val} XLM into Soroban contract balance!`, "Deposit Confirmed");
       refetchBalance();
+      refetchWalletBalance();
       setDepositAmount("");
     } catch (err) {
       addToast("error", err instanceof Error ? err.message : "Deposit failed", "Deposit Error");
@@ -137,6 +151,7 @@ export default function SubscriptionTiers() {
       await withdraw(stroops);
       addToast("success", `Withdrew ${val} XLM back to your wallet!`, "Withdrawal Confirmed");
       refetchBalance();
+      refetchWalletBalance();
       setWithdrawAmount("");
     } catch (err) {
       addToast("error", err instanceof Error ? err.message : "Withdrawal failed", "Withdrawal Error");
@@ -171,6 +186,16 @@ export default function SubscriptionTiers() {
       refetchSub();
     } catch (err) {
       addToast("error", err instanceof Error ? err.message : "Cancellation failed", "Cancel Error");
+    }
+  };
+
+  const handleMaxDeposit = () => {
+    if (xlmBalance > 2) {
+      // Keep ~1.5 XLM for reserve / tx fees
+      const maxSpendable = Math.max(0, Math.floor(xlmBalance - 1.5));
+      setDepositAmount(maxSpendable.toString());
+    } else {
+      setDepositAmount(xlmBalance > 0 ? xlmBalance.toString() : "0");
     }
   };
 
@@ -214,17 +239,25 @@ export default function SubscriptionTiers() {
                     </span>
                   )}
                 </div>
-                <div className="flex items-center gap-3 text-xs text-zinc-400 mt-1">
+                <div className="flex flex-wrap items-center gap-3 text-xs text-zinc-400 mt-1">
                   <span>
-                    Contract Escrow Balance:{" "}
+                    Contract Escrow:{" "}
                     <strong className="text-zinc-200 font-mono">
                       {formatPrice(balance)} XLM
+                    </strong>
+                  </span>
+                  <span>·</span>
+                  <span>
+                    Wallet:{" "}
+                    <strong className="text-violet-300 font-mono">
+                      {formattedXlm}
                     </strong>
                   </span>
                   <button
                     onClick={() => {
                       refetchBalance();
                       refetchSub();
+                      refetchWalletBalance();
                     }}
                     className="text-zinc-500 hover:text-violet-400 transition-colors"
                     title="Refresh Balance"
@@ -422,6 +455,29 @@ export default function SubscriptionTiers() {
             </p>
           </div>
 
+          {/* Wallet Balance Info Bar */}
+          <div className="flex items-center justify-between rounded-xl bg-violet-950/25 border border-violet-500/20 px-4 py-3 text-xs">
+            <span className="text-zinc-400 flex items-center gap-1.5">
+              <Coins className="h-3.5 w-3.5 text-violet-400" />
+              Available in Your Connected Wallet:
+            </span>
+            <div className="flex items-center gap-2">
+              <span className="font-bold text-violet-300 font-mono text-sm">
+                {formattedXlm}
+              </span>
+              {xlmBalance < 10 && (
+                <button
+                  onClick={() => fundWithFriendbot()}
+                  disabled={funding}
+                  className="rounded-md border border-cyan-500/30 bg-cyan-500/10 px-2 py-0.5 text-[10px] text-cyan-300 hover:bg-cyan-500/20 flex items-center gap-1"
+                >
+                  <Droplets className="h-2.5 w-2.5 text-cyan-400" />
+                  +10k
+                </button>
+              )}
+            </div>
+          </div>
+
           <div className="flex gap-2">
             {[10, 25, 50, 100].map((amt) => (
               <button
@@ -445,6 +501,14 @@ export default function SubscriptionTiers() {
                 placeholder="Deposit amount in XLM"
                 className="w-full rounded-xl border border-zinc-700/60 bg-zinc-800/50 px-4 py-3 text-sm text-zinc-100 placeholder-zinc-500 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500/30 font-mono"
               />
+              <button
+                type="button"
+                onClick={handleMaxDeposit}
+                className="absolute right-12 top-3 text-xs font-bold text-emerald-400 hover:text-emerald-300 transition-colors"
+                title="Fill maximum spendable balance from wallet"
+              >
+                MAX
+              </button>
               <span className="absolute right-3.5 top-3.5 text-xs font-bold text-zinc-400">
                 XLM
               </span>
@@ -478,7 +542,7 @@ export default function SubscriptionTiers() {
           </div>
 
           <div className="flex items-center justify-between rounded-xl bg-zinc-800/40 border border-zinc-700/40 px-4 py-3 text-xs">
-            <span className="text-zinc-400">Available to Withdraw:</span>
+            <span className="text-zinc-400">Available in Contract Escrow:</span>
             <span className="font-bold text-cyan-300 font-mono text-sm">
               {formatPrice(balance)} XLM
             </span>

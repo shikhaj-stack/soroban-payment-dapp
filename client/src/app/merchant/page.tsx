@@ -10,6 +10,8 @@ import {
   useBatchBilling,
   useAllTiers,
 } from "@/hooks/useContract";
+import { useWalletBalance } from "@/hooks/useWalletBalance";
+import { getExplorerUrl, CONTRACT_ADDRESS } from "@/lib/stellar";
 import Navbar from "@/components/Navbar";
 import ActivityFeed from "@/components/ActivityFeed";
 import TransactionTracker from "@/components/TransactionTracker";
@@ -25,6 +27,9 @@ import {
   Zap,
   Wallet,
   Coins,
+  ArrowUpRight,
+  RefreshCw,
+  Droplets,
 } from "lucide-react";
 
 function formatXLM(amount: bigint | number): string {
@@ -82,12 +87,20 @@ const INITIAL_SUBSCRIBERS: MockSubscriberRecord[] = [
 
 export default function MerchantPortal() {
   const isConnected = useWalletStore((s) => s.isConnected);
+  const address = useWalletStore((s) => s.address);
   const walletName = useWalletStore((s) => s.walletName);
   const setModalOpen = useWalletStore((s) => s.setModalOpen);
   const addToast = useToastStore((s) => s.addToast);
 
   const { earnings, refetch: refetchEarnings } = useMerchantEarnings();
   const { tiers, refetch: refetchTiers } = useAllTiers();
+  const {
+    formattedXlm,
+    loading: walletLoading,
+    funding,
+    refetch: refetchWalletBalance,
+    fundWithFriendbot,
+  } = useWalletBalance(address);
 
   const { mutate: withdrawEarnings, loading: withdrawing } = useWithdrawMerchantEarnings();
   const { mutate: createTier, loading: creatingTier } = useCreateTier();
@@ -103,8 +116,9 @@ export default function MerchantPortal() {
     if (isConnected) {
       refetchEarnings();
       refetchTiers();
+      refetchWalletBalance();
     }
-  }, [isConnected, refetchEarnings, refetchTiers]);
+  }, [isConnected, refetchEarnings, refetchTiers, refetchWalletBalance]);
 
   const handleWithdrawAll = async () => {
     if (earnings <= 0n) return;
@@ -112,6 +126,7 @@ export default function MerchantPortal() {
       await withdrawEarnings(earnings);
       addToast("success", `Claimed ${formatXLM(earnings)} XLM revenue directly into your merchant wallet!`, "Earnings Claimed");
       refetchEarnings();
+      refetchWalletBalance();
     } catch (err) {
       addToast("error", err instanceof Error ? err.message : "Withdrawal failed", "Claim Error");
     }
@@ -148,6 +163,7 @@ export default function MerchantPortal() {
         )
       );
       refetchEarnings();
+      refetchWalletBalance();
     } catch (err) {
       addToast("error", err instanceof Error ? err.message : "Billing failed", "Billing Error");
     }
@@ -171,6 +187,7 @@ export default function MerchantPortal() {
         )
       );
       refetchEarnings();
+      refetchWalletBalance();
     } catch (err) {
       addToast("error", err instanceof Error ? err.message : "Batch billing failed", "Batch Error");
     }
@@ -206,11 +223,20 @@ export default function MerchantPortal() {
               </div>
 
               {isConnected ? (
-                <div className="flex items-center gap-3">
+                <div className="flex flex-wrap items-center gap-2 sm:gap-3">
                   <span className="flex items-center gap-1.5 rounded-full bg-emerald-500/10 border border-emerald-500/20 px-3.5 py-1.5 text-xs font-semibold text-emerald-300">
                     <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />
                     Admin Mode Active ({walletName || "Connected"})
                   </span>
+                  <a
+                    href={getExplorerUrl("account", address)}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex items-center gap-1 rounded-xl border border-zinc-800 bg-zinc-900/60 hover:bg-zinc-850 px-3 py-1.5 text-xs text-zinc-400 hover:text-zinc-200 transition-all"
+                  >
+                    Merchant Explorer
+                    <ArrowUpRight className="h-3 w-3" />
+                  </a>
                 </div>
               ) : (
                 <button
@@ -225,9 +251,10 @@ export default function MerchantPortal() {
 
             {/* Stats Overview */}
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-              <div className="rounded-2xl border border-zinc-800/80 bg-zinc-900/40 glass-subtle p-5">
+              {/* Card 1: Claimable Contract Revenue */}
+              <div className="rounded-2xl border border-violet-500/30 bg-violet-950/20 glass-subtle p-5 shadow-lg shadow-violet-950/30">
                 <div className="flex items-center justify-between mb-3">
-                  <span className="text-xs font-bold uppercase tracking-wider text-zinc-500">
+                  <span className="text-xs font-bold uppercase tracking-wider text-violet-300">
                     Claimable Revenue
                   </span>
                   <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-violet-500/10 border border-violet-500/20 text-violet-400">
@@ -240,11 +267,42 @@ export default function MerchantPortal() {
                   </span>
                   <span className="text-xs font-bold text-violet-400">XLM</span>
                 </div>
-                <p className="text-[11px] text-zinc-500 mt-1">
+                <p className="text-[11px] text-zinc-400 mt-1">
                   Accumulated in Soroban escrow
                 </p>
               </div>
 
+              {/* Card 2: Merchant Wallet Balance */}
+              <div className="rounded-2xl border border-zinc-800/80 bg-zinc-900/40 glass-subtle p-5">
+                <div className="flex items-center justify-between mb-3">
+                  <span className="text-xs font-bold uppercase tracking-wider text-zinc-500">
+                    Merchant Wallet
+                  </span>
+                  <div className="flex items-center gap-1">
+                    <button
+                      onClick={() => refetchWalletBalance()}
+                      disabled={walletLoading}
+                      title="Refresh"
+                      className="text-zinc-500 hover:text-zinc-300 p-1"
+                    >
+                      <RefreshCw className={`h-3 w-3 ${walletLoading ? "animate-spin text-cyan-400" : ""}`} />
+                    </button>
+                    <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-400">
+                      <Coins className="h-4 w-4" />
+                    </div>
+                  </div>
+                </div>
+                <div className="flex items-baseline gap-2">
+                  <span className="text-2xl font-extrabold text-zinc-100 font-mono">
+                    {formattedXlm}
+                  </span>
+                </div>
+                <p className="text-[11px] text-zinc-500 mt-1">
+                  On-chain Stellar account balance
+                </p>
+              </div>
+
+              {/* Card 3: Active Subscribers */}
               <div className="rounded-2xl border border-zinc-800/80 bg-zinc-900/40 glass-subtle p-5">
                 <div className="flex items-center justify-between mb-3">
                   <span className="text-xs font-bold uppercase tracking-wider text-zinc-500">
@@ -265,33 +323,14 @@ export default function MerchantPortal() {
                 </p>
               </div>
 
-              <div className="rounded-2xl border border-zinc-800/80 bg-zinc-900/40 glass-subtle p-5">
-                <div className="flex items-center justify-between mb-3">
-                  <span className="text-xs font-bold uppercase tracking-wider text-zinc-500">
-                    Published Tiers
-                  </span>
-                  <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-400">
-                    <Layers className="h-4 w-4" />
-                  </div>
-                </div>
-                <div className="flex items-baseline gap-2">
-                  <span className="text-2xl font-extrabold text-zinc-100">
-                    {tiers.length}
-                  </span>
-                  <span className="text-xs text-zinc-500">plans live</span>
-                </div>
-                <p className="text-[11px] text-zinc-500 mt-1">
-                  On-chain Soroban storage
-                </p>
-              </div>
-
+              {/* Card 4: Quick Claim Action */}
               <div className="rounded-2xl border border-zinc-800/80 bg-zinc-900/40 glass-subtle p-5 flex flex-col justify-between">
                 <div>
                   <span className="text-xs font-bold uppercase tracking-wider text-zinc-500">
                     Quick Claim
                   </span>
                   <p className="text-xs text-zinc-400 mt-1">
-                    Withdraw all available revenue to your wallet
+                    Withdraw claimable earnings to your wallet
                   </p>
                 </div>
                 <button
