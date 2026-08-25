@@ -54,7 +54,7 @@ npm install
 npm run dev
 ```
 
-Open [http://localhost:3000](https://soroban-payment-dapp-sand.vercel.app/) in your browser to view the dApp.
+Open [https://soroban-payment-dapp-sand.vercel.app/](https://soroban-payment-dapp-sand.vercel.app/) in your browser to view the dApp.
 
 ### 3. Smart Contract (Optional)
 
