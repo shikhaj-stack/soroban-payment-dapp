@@ -35,7 +35,9 @@ soroban-payment-dapp/
 
 ---
 App preview
-![image alt](https://github.com/shikhaj-stack/soroban-payment-dapp/blob/4fb3ee7544d1da52d397268024bd3b34c2d9d64b/Screenshot%20(64).png)
+![image alt](https://github.com/shikhaj-stack/soroban-payment-dapp/blob/a4c4eee3dadc2f6fbcb7c564f2c9b7f5eb2216a5/Screenshot%20(65).png)
+MultiWallet Integration
+![image alt](https://github.com/shikhaj-stack/soroban-payment-dapp/blob/a4c4eee3dadc2f6fbcb7c564f2c9b7f5eb2216a5/Screenshot%20(66).png)
 
 ## 🚀 Quick Start (Run Locally)
 
